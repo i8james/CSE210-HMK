@@ -1,0 +1,268 @@
+<!DOCTYPE html>
+<html lang="en-us">
+
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>CSE 210 | Inheritance Programming Assignment</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Montserrat&family=Open+Sans&display=swap"
+    rel="stylesheet">
+  <link rel="stylesheet" href="../styles/course.css">
+  <link rel="stylesheet"
+    href="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.6.0/styles/default.min.css">
+
+</head>
+
+<body>
+  <header>
+    <div class="page">
+      <h1>CSE 210<span id="coursetitle">: Programming with Classes</span></h1>
+      <img src="../images/byui-logo.svg" alt="BYU-I logo" class="logo">
+    </div>
+  </header>
+  <main class="page">
+    <h2>Unit 04 Develop: Mindfulness Program</h2>
+
+    <h3>Problem Overview</h3>
+    <p>We live in a fast-paced world full of stress and anxiety. We could each benefit from taking time for mindfulness activities where we can reflect and unwind.</p>
+    <p>Most people would agree that we should take more time to be mindful, but relatively few of us do. Think to yourself for a moment about some reasons that you think keep people from doing this. Could a program or an app help with any of these reasons?</p>
+
+    <p>Some of the problems you considered may have included:</p>
+    <ul>
+      <li>We forget</li>
+      <li>We get busy</li>
+      <li>We think it will take too long, so we don't start</li>
+      <li>We don't know where to begin. We know we should reflect on something but don't know what to start with.</li>
+    </ul>
+
+    <p>While it may not resolve all of the issues that keep people from taking more time for reflection, a great program could help people by providing structure and prompts to guide them through various exercises.</p>
+
+    <h3>Solution Idea</h3>
+    <p>Consider an app that provides three different kinds of mindfulness opportunities. It could give some guidance and structure to users in the following activities:</p>
+    <ul>
+      <li>Breathing Activity - Help the user pace their breathing to have a session of deep breathing for a certain amount of time. They might find more peace and less stress through the exercise.</li>
+      <li>Reflection Activity - Guide the user to think deeply, by having them consider a certain experience when they were successful or demonstrated strength. Then, prompt them with questions to reflect more deeply about details of this experience. They might discover more depth than they previously realized.</li>
+      <li>Listing Activity - Guide the user to think broadly, by helping them list as many things as they can in a certain area of strength or positivity. They might discover more breadth than they previously realized.</li>
+    </ul>
+    
+    <p>The application could additional help the user keep track of the time or frequency they spend in these activities and give them gentle prompts and reminders.</p>
+
+    <div class="callout info">The user interface of a program like this could be anything from a Website or Mobile App to one that runs on a Smart Watch and it could be done in many different kinds of colors, shapes, and styles. Learning to write a program to solve the real-world problem is the most critical part, so this assignment will focus on that, rather than creating a flashy interface.</div>
+
+    <h3>Specification</h3>
+    <p>Write a program that provides the three activities described above. It should help them work through these activities in stages using basic forms of delay (animation or countdown).</p>
+
+    <h4>Functional requirements</h4>
+    <p>Your program must do the following:</p>
+    <ol>
+      <li>Have a menu system to allow the user to choose an activity.</li>
+      <li>Each activity should start with a common starting message that provides the name of the activity, a description, and asks for and sets the duration of the activity in seconds. Then, it should tell the user to prepare to begin and pause for several seconds.</li>
+      <li>Each activity should end with a common ending message that tells the user they have done a good job, and pause and then tell them the activity they have completed and the length of time and pauses for several seconds before finishing.</li>
+      <li>Whenever the application pauses it should show some kind of animation to the user, such as a spinner, a countdown timer, or periods being displayed to the screen.</li>
+      <li>The interface for the program should remain generally true to the one shown in the video demo.</li>
+      <li>Provide activities for reflection, breathing, and enumeration, as described below:</li>
+    </ol>
+
+    <h5>Breathing Activity</h5>
+    <ol>
+      <li>The activity should begin with the standard starting message and prompt for the duration that is used by all activities.</li>
+      <li>The description of this activity should be something like: <em>"This activity will help you relax by walking your through breathing in and out slowly. Clear your mind and focus on your breathing."</em></li>
+      <li>After the starting message, the user is shown a series of messages alternating between "Breathe in..." and "Breathe out..."</li>
+      <li>After each message, the program should pause for several seconds and show a countdown.</li>
+      <li>It should continue until it has reached the number of seconds the user specified for the duration.</li>
+      <li>The activity should conclude with the standard finishing message for all activities.</li>
+    </ol>
+
+
+    <h5>Reflection Activity</h5>
+    <ol>
+      <li>The activity should begin with the standard starting message and prompt for the duration that is used by all activities.</li>
+      <li>The description of this activity should be something like: <em>"This activity will help you reflect on times in your life when you have shown strength and resilience. This will help you recognize the power you have and how you can use it in other aspects of your life."</em></li>
+      <li><p>After the starting message, select a random prompt to show the user such as:</p>
+        <ul>
+          <li><em>Think of a time when you stood up for someone else.</em></li>
+          <li><em>Think of a time when you did something really difficult.</em></li>
+          <li><em>Think of a time when you helped someone in need.</em></li>
+          <li><em>Think of a time when you did something truly selfless.</em></li>
+        </ul>
+      </li>
+      <li><p>After displaying the prompt, the program should ask the to reflect on questions that relate to this experience. These questions should be pulled from a list such as the following:</p>
+        <ul>
+          <li><em>Why was this experience meaningful to you?</em></li>
+          <li><em>Have you ever done anything like this before?</em></li>
+          <li><em>How did you get started?</em></li>
+          <li><em>How did you feel when it was complete?</em></li>
+          <li><em>What made this time different than other times when you were not as successful?</em></li>
+          <li><em>What is your favorite thing about this experience?</em></li>
+          <li><em>What could you learn from this experience that applies to other situations?</em></li>
+          <li><em>What did you learn about yourself through this experience?</em></li>
+          <li><em>How can you keep this experience in mind in the future?</em></li>
+        </ul>
+      </li>
+      <li>After each question the program should pause for several seconds before continuing to the next one. While the program is paused it should display a kind of spinner.</li>
+      <li>It should continue showing random questions until it has reached the number of seconds the user specified for the duration.</li>
+      <li>The activity should conclude with the standard finishing message for all activities.</li>
+    </ol>
+
+    <h5>Listing Activity</h5>
+    <ol>
+      <li>The activity should begin with the standard starting message and prompt for the duration that is used by all activities.</li>
+      <li>The description of this activity should be something like: <em>"This activity will help you reflect on the good things in your life by having you list as many things as you can in a certain area."</em></li>
+      <li><p>After the starting message, select a random prompt to show the user such as:</p>
+        <ul>
+          <li><em>Who are people that you appreciate?</em></li>
+          <li><em>What are personal strengths of yours?</em></li>
+          <li><em>Who are people that you have helped this week?</em></li>
+          <li><em>When have you felt the Holy Ghost this month?</em></li>
+          <li><em>Who are some of your personal heroes?</em></li>
+          </ul>
+      </li>
+      <li>After displaying the prompt, the program should give them a countdown of several seconds to begin thinking about the prompt. Then, it should prompt them to keep listing items.</li>
+      <li>The user lists as many items as they can until they they reach the duration specified by the user at the beginning.</li>
+      <li>The activity them displays back the number of items that were entered.</li>
+      <li>The activity should conclude with the standard finishing message for all activities.</li>
+    </ol>
+
+
+
+    <h4>Design Requirements</h4>
+    <p>In addition your program must:</p>
+    <ol>
+      <li>Use inheritance by having a separate class for each kind of activity with a base class to contain any shared attributes or behaviors.</li>
+      <li>Avoid duplicating code in classes where it could instead be placed in a base class.</li>
+      <li>Follow the principles of encapsulation and abstraction by having private member variables and putting related items in the same class.</li>
+    </ol>
+
+    <h4>Simplifications</h4>
+    <p>For the core requirements you do <strong>not</strong> need to worry about the following:</p>
+    <ol>
+      <li>Your program does not need to track any statistics such as how many times or how frequently the user has done an activity.</li>
+      <li>When getting random questions or prompts, you can just choose a random one from the list. You don't have to worry about if it was already chosen this session, or worry about running out of prompts.</li>
+    </ol>
+
+    <h4>Showing Creativity and Exceeding Requirements</h4>
+    <p>Meeting the core requirements makes your program eligible to receive a 93%. To receive 100% on the assignment, you need to show creativity and exceed these requirements.</p>
+    <p>Here are some ideas you might consider:</p>
+
+    <ul>
+      <li>Adding another kind of activity.</li>
+      <li>Keeping a log of how many times activities were performed.</li>
+      <li>Make sure no random prompts/questions are selected until they have all been used at least once in that session.</li>
+      <li>Saving and loading a log file.</li>
+      <li>Adding more meaningful animations for the breathing (such as text that grows out quickly at first and then slows as they near the end of the breath).</li>
+      <li>Anything else you can think of!</li>
+    </ul>
+
+    <p>Report on what you have done to exceed requirements by adding a description of it in a comment in the Program.cs file.</p>
+
+    <h4>Video Demo</h4>
+    <p>The following video demonstrates the way this program should work:</p>
+
+    <p>Direct link: <a href="https://video.byui.edu/media/t/1_e36t63t0" target="_blank">Mindfulness Program Demo</a> (4 minutes)</p>
+
+    <figure class="video-container">
+      <iframe id="kaltura_player" src="https://cdnapisec.kaltura.com/p/1157612/sp/115761200/embedIframeJs/uiconf_id/41338032/partner_id/1157612?iframeembed=true&playerId=kaltura_player&entry_id=1_e36t63t0&flashvars[localizationCode]=en&amp;flashvars[leadWithHTML5]=true&amp;flashvars[sideBarContainer.plugin]=true&amp;flashvars[sideBarContainer.position]=left&amp;flashvars[sideBarContainer.clickToClose]=true&amp;flashvars[chapters.plugin]=true&amp;flashvars[chapters.layout]=vertical&amp;flashvars[chapters.thumbnailRotator]=false&amp;flashvars[streamSelector.plugin]=true&amp;flashvars[EmbedPlayer.SpinnerTarget]=videoHolder&amp;flashvars[dualScreen.plugin]=true&amp;flashvars[Kaltura.addCrossoriginToIframe]=true&amp;&wid=1_82kvcjtk" allowfullscreen webkitallowfullscreen mozAllowFullScreen allow="autoplay *; fullscreen *; encrypted-media *" sandbox="allow-downloads allow-forms allow-same-origin allow-scripts allow-top-navigation allow-pointer-lock allow-popups allow-modals allow-orientation-lock allow-popups-to-escape-sandbox allow-presentation allow-top-navigation-by-user-activation" frameborder="0" title="CSE 210 Mindfulness Program Demo"></iframe>
+    </figure>
+    
+    <h3>Code Helps</h3>
+    <p>You might find the following code helps useful in this project:</p>
+    <details>
+      <summary>Pausing</summary>
+
+      <p>In the demo video, you can see the program pausing for a certain period of time. This can be done with the <code>Thread.Sleep()</code> method which takes an integer as the number of milliseconds for the current "thread of execution" to sleep or pause.</p>
+      
+      <p>The following example shows how to make the computer to wait for 1 second (1000 milliseconds):</p>
+
+<pre><code class="csharp">
+Console.WriteLine("Going to sleep for a second...");
+
+Thread.Sleep(1000);
+
+Console.WriteLine("I'm back!!");
+</code></pre>      
+
+    </details>
+    <details>
+      <summary>Display Animations</summary>
+
+      <p>To display an animation, such as the spinner or the countdown timer, you need to have the computer pause for a period of time, and then replace the previous character with a new one. This can be done by writing the backspace character <code>"\b"</code> and which works like pushing the left arrow. Then, you can write a new character over the top of it.</p>
+
+      <p>Because the backspace character works like pressing the left arrow, instead of a backspace, it does not delete the character on the screen. With this in mind, it is common to write <code>"\b \b"</code> which moves left, writes a blank space over the previous character and then moves left again so it is ready for your new character.</p>
+      
+      <p>The following example shows how to overwrite a character after half a second:</p>
+
+<pre><code class="csharp">
+Console.Write("+");
+
+Thread.Sleep(500);
+
+Console.Write("\b \b"); // Erase the + character
+Console.Write("-"); // Replace it with the - character
+
+</code></pre>      
+
+    <p>If this code were in a loop it would continue displaying and replacing characters.</p>
+
+    </details>
+    <details>
+      <summary>Working with Time</summary>
+
+      <p>The C# language has a powerful Date and Time library. You might find it useful to get the current time, add a number of seconds to it, and then check if the current time is less than the new time.</p>
+
+      <p>This can be accomplished with the <code>DateTime</code> class. An object with the current time can be obtained withe <code>DateTime.Now</code> . Then, it has methods such as <code>.AddSeconds(numberOfSeconds)</code>, and it works with the less than <code>&lt;</code> operator as you would expect.</p>
+
+      <p>The following code snippet shows an example:</p>
+
+<pre><code class="csharp">
+DateTime startTime = DateTime.Now;
+DateTime futureTime = startTime.AddSeconds(5);
+
+Thread.Sleep(3000);
+
+DateTime currentTime = DateTime.Now;
+if (currentTime &lt; futureTime)
+{
+    Console.WriteLine("We have not arrived at our future time yet...")
+}
+</code></pre>      
+
+    </details>
+
+    <p>The following video shows how to use these code snippets to achieve basic display animations.</p>
+
+    <ul>
+      <li>Direct Link: <a href="https://video.byui.edu/media/t/1_soxhacuf" target="_blank">Display Animations</a> (13 minutes)</li>
+    </ul>
+    <figure class="video-container">
+    <iframe id="kaltura_player" src="https://cdnapisec.kaltura.com/p/1157612/sp/115761200/embedIframeJs/uiconf_id/41338032/partner_id/1157612?iframeembed=true&playerId=kaltura_player&entry_id=1_soxhacuf&flashvars[localizationCode]=en&amp;flashvars[leadWithHTML5]=true&amp;flashvars[sideBarContainer.plugin]=true&amp;flashvars[sideBarContainer.position]=left&amp;flashvars[sideBarContainer.clickToClose]=true&amp;flashvars[chapters.plugin]=true&amp;flashvars[chapters.layout]=vertical&amp;flashvars[chapters.thumbnailRotator]=false&amp;flashvars[streamSelector.plugin]=true&amp;flashvars[EmbedPlayer.SpinnerTarget]=videoHolder&amp;flashvars[dualScreen.plugin]=true&amp;flashvars[Kaltura.addCrossoriginToIframe]=true&amp;&wid=1_ulbqfnoi" allowfullscreen webkitallowfullscreen mozAllowFullScreen allow="autoplay *; fullscreen *; encrypted-media *" sandbox="allow-downloads allow-forms allow-same-origin allow-scripts allow-top-navigation allow-pointer-lock allow-popups allow-modals allow-orientation-lock allow-popups-to-escape-sandbox allow-presentation allow-top-navigation-by-user-activation" frameborder="0" title="Display Animations in C#"></iframe>
+    </figure>
+
+    <h3>Design</h3>
+    <p>You will work with your team to create a design for this program. Then, you will each write the code for the program individually.</p>
+
+    <h3>Develop the Program</h3>
+    <p>In the course repository, find the <code>Develop04</code> project in the <code>Prove</code> folder and write your program there.</p>
+
+    <h3>Submission</h3>
+    <ol>
+      <li>Develop the program using the principle of Inheritance as described above.</li>
+      <li>Make sure to describe anything you have done to exceed the requirements in comments in the Program.cs file.</li>
+      <li>Commit your source code and push it to GitHub.</li>
+      <li>Verify that you can see your updated code at GitHub.</li>
+      <li>In I-Learn, submit a link to your GitHub repository. In the submission comment, describe anything you have done to show creativity and exceed the core requirements.</li>
+    </ol>
+
+  </main>
+
+  <footer>
+    <p>Copyright &copy; Brigham Young University-Idaho | All rights reserved</p>
+  </footer>
+  <script
+    src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.6.0/highlight.min.js"></script>
+  <script>hljs.highlightAll();</script>
+
+</body>
+
+</html>

@@ -64,4 +64,9 @@ public class Fraction
         // Is will be recomputed each time this is called.
         return (double)_top / (double)_bottom;
     }
+
+    public override string ToString()
+    {
+        return GetFractionString();
+    }
 }
