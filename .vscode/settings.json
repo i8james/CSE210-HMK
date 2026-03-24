@@ -3,5 +3,6 @@
         "dotnet run": true,
         "dotnet build": true,
         ".\\FinalProject.exe": true
-    }
+    },
+    "claudeCodeChat.permissions.yoloMode": false
 }

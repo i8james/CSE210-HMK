@@ -133,6 +133,50 @@ public class DeckEvaluatorForm : Form
         LoadCardDatabase();
     }
 
+    // ===== CSV PARSING WITH QUOTE HANDLING =====
+    /// <summary>
+    /// Parses a CSV row respecting quoted fields for values containing commas or newlines
+    /// </summary>
+    private string[] ParseCsvRow(string line)
+    {
+        var fields = new List<string>();
+        var currentField = new System.Text.StringBuilder();
+        bool inQuotes = false;
+
+        for (int i = 0; i < line.Length; i++)
+        {
+            char c = line[i];
+            
+            if (c == '"')
+            {
+                if (inQuotes && i + 1 < line.Length && line[i + 1] == '"')
+                {
+                    // Escaped quote
+                    currentField.Append('"');
+                    i++;
+                }
+                else
+                {
+                    // Toggle quote mode
+                    inQuotes = !inQuotes;
+                }
+            }
+            else if (c == ',' && !inQuotes)
+            {
+                // Field separator
+                fields.Add(currentField.ToString());
+                currentField.Clear();
+            }
+            else
+            {
+                currentField.Append(c);
+            }
+        }
+
+        fields.Add(currentField.ToString());
+        return fields.ToArray();
+    }
+
     private void LoadCardDatabase()
     {
         string dataFile = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "cards.csv");
@@ -141,17 +185,17 @@ public class DeckEvaluatorForm : Form
         if (!File.Exists(dataFile))
         {
             File.WriteAllText(dataFile,
-                "Name,ManaCost,Colors,Type,Category,IsLand\n" +
-                "Island,0, ,Land,Land,true\n" +
-                "Forest,0, ,Land,Land,true\n" +
-                "Swamp,0, ,Land,Land,true\n" +
-                "Mountain,0, ,Land,Land,true\n" +
-                "Plains,0, ,Land,Land,true\n" +
-                "Watery Grave,0,U;B,Land — Island Swamp,Land,true\n" +
-                "Sol Ring,1, ,Artifact,Artifact,false\n" +
-                "Swords to Plowshares,1, ,Instant,Removal,false\n" +
-                "Rhystic Study,3,U,Enchantment,Draw,false\n" +
-                "Nicol Bolas Dragon God,6,U;B;R,Planeswalker,Planeswalker,false\n");
+                "Name,ManaCost,Colors,Type,Category,IsLand,OracleText\n" +
+                "Island,0, ,Land,Land,true,\"\"\n" +
+                "Forest,0, ,Land,Land,true,\"\"\n" +
+                "Swamp,0, ,Land,Land,true,\"\"\n" +
+                "Mountain,0, ,Land,Land,true,\"\"\n" +
+                "Plains,0, ,Land,Land,true,\"\"\n" +
+                "Watery Grave,0,U;B,Land — Island Swamp,Land,true,\"\"\n" +
+                "Sol Ring,1, ,Artifact,Artifact,false,\"\"\n" +
+                "Swords to Plowshares,1, ,Instant,Removal,false,\"Remove target creature or planeswalker.\"\n" +
+                "Rhystic Study,3,U,Enchantment,Draw,false,\"Whenever an opponent casts a spell, you may draw a card unless that player pays {1}.\"\n" +
+                "Nicol Bolas Dragon God,6,U;B;R,Planeswalker,Planeswalker,false,\"\"\n");
         }
 
         try
@@ -159,7 +203,7 @@ public class DeckEvaluatorForm : Form
             foreach (var row in File.ReadAllLines(dataFile).Skip(1))
             {
                 if (string.IsNullOrWhiteSpace(row)) continue;
-                var fields = row.Split(',');
+                var fields = ParseCsvRow(row);
                 if (fields.Length < 5) continue;
 
                 var name = fields[0].Trim();
@@ -174,6 +218,7 @@ public class DeckEvaluatorForm : Form
                 string type = "";
                 string category = "Unknown";
                 bool isLand = false;
+                string oracleText = "";
 
                 if (fields.Length >= 3)
                     colors = fields[2].Split(new[] { ';' }, StringSplitOptions.RemoveEmptyEntries).Select(c => c.Trim()).Where(c => c.Length > 0).ToList();
@@ -183,6 +228,8 @@ public class DeckEvaluatorForm : Form
                     category = fields[4].Trim();
                 if (fields.Length >= 6)
                     isLand = bool.TryParse(fields[5], out bool isl) && isl;
+                if (fields.Length >= 7)
+                    oracleText = fields[6].Trim().Trim('"');
 
                 // Backward compatibility with existing list if no IsLand field.
                 if (!isLand && type.IndexOf("land", StringComparison.OrdinalIgnoreCase) >= 0)
@@ -195,7 +242,8 @@ public class DeckEvaluatorForm : Form
                     Colors = colors,
                     Type = type,
                     Category = category,
-                    IsLand = isLand
+                    IsLand = isLand,
+                    OracleText = oracleText
                 };
 
                 cardDatabase[name] = record;
@@ -205,6 +253,27 @@ public class DeckEvaluatorForm : Form
         {
             MessageBox.Show("Failed to load card database: " + ex.Message, "Deck Evaluator", MessageBoxButtons.OK, MessageBoxIcon.Error);
         }
+    }
+
+    // ===== HELPER METHODS FOR EFFICIENT CARD FILTERING =====
+    
+    /// <summary>
+    /// Determines if a card is a non-land card (used consistently throughout the application)
+    /// </summary>
+    private bool IsNonLand(Card card)
+    {
+        return !card.IsLand && (card.Type == null || card.Type.IndexOf("Land", StringComparison.OrdinalIgnoreCase) < 0);
+    }
+
+    /// <summary>
+    /// Gets all non-land cards grouped by category (efficient single-pass operation)
+    /// </summary>
+    private Dictionary<string, int> GetNonLandCategories(Deck deck)
+    {
+        return deck.cards
+            .Where(IsNonLand)
+            .GroupBy(c => c.Category ?? "Unknown")
+            .ToDictionary(g => g.Key, g => g.Count());
     }
 
     private async void EvaluateButton_Click(object sender, EventArgs e)
@@ -221,7 +290,7 @@ public class DeckEvaluatorForm : Form
             }
 
             // Run simulations
-            int numSimulations = 1000;
+            int numSimulations = 1000000;
             int maxTurns = 10;
 
             progressBar.Value = 0;
@@ -239,10 +308,10 @@ public class DeckEvaluatorForm : Form
 
             progressLabel.Text = "Done!";
 
-            // Display results
+            // Display comprehensive evaluation results  
             resultsTextBox.Clear();
 
-            // Title
+            // ===== TITLE AND METADATA =====
             resultsTextBox.SelectionFont = new Font(resultsTextBox.Font.FontFamily, 12, FontStyle.Bold);
             resultsTextBox.SelectionColor = Color.DarkBlue;
             resultsTextBox.AppendText("Simulation Results\n");
@@ -250,15 +319,27 @@ public class DeckEvaluatorForm : Form
             resultsTextBox.SelectionColor = Color.Black;
             resultsTextBox.AppendText($"({numSimulations} games, {maxTurns} turns each)\n\n");
 
-            // Stats
+            // ===== DECK COMPOSITION =====
             resultsTextBox.SelectionFont = new Font(resultsTextBox.Font.FontFamily, 10, FontStyle.Bold);
-            resultsTextBox.AppendText("Statistics:\n");
+            resultsTextBox.AppendText("Deck Composition:\n");
+            resultsTextBox.SelectionFont = resultsTextBox.Font;
+            int landCount = deck.LandCount;
+            int nonLandCount = deck.cards.Count - landCount;
+            resultsTextBox.AppendText($"• Total Cards: {deck.cards.Count}\n");
+            resultsTextBox.AppendText($"• Lands: {landCount} ({(landCount * 100.0 / deck.cards.Count):F1}%)\n");
+            resultsTextBox.AppendText($"• Non-Land Spells: {nonLandCount} ({(nonLandCount * 100.0 / deck.cards.Count):F1}%)\n\n");
 
+            // ===== MANA SIMULATION STATISTICS =====
+            resultsTextBox.SelectionFont = new Font(resultsTextBox.Font.FontFamily, 10, FontStyle.Bold);
+            resultsTextBox.AppendText("Mana Statistics (from 1,000,000 game simulations):\n");
             resultsTextBox.SelectionFont = resultsTextBox.Font;
             resultsTextBox.AppendText($"• Average missed land drops: {results.AverageMissedLands:F2}\n");
-            resultsTextBox.AppendText($"• Average lands played by turn {maxTurns}: {results.AverageLandsPlayed:F2}\n\n");
+            resultsTextBox.AppendText($"• Average lands played by turn {maxTurns}: {results.AverageLandsPlayed:F2}\n");
+            resultsTextBox.AppendText($"• Land drop success rate: {(100 - (results.AverageMissedLands / maxTurns * 100)):F1}%\n");
+            resultsTextBox.AppendText($"• Average playable cards across hand: {results.AverageCardsPlayable:F2}\n");
+            resultsTextBox.AppendText($"• Average idle turns (nothing to play): {results.AverageIdleTurns:F2}\n\n");
 
-            // Mana Curve
+            // ===== MANA CURVE ANALYSIS =====
             resultsTextBox.SelectionFont = new Font(resultsTextBox.Font.FontFamily, 10, FontStyle.Bold);
             resultsTextBox.SelectionColor = Color.DarkBlue;
             resultsTextBox.AppendText("📊 Mana Curve (Detailed):\n");
@@ -270,7 +351,7 @@ public class DeckEvaluatorForm : Form
                 foreach (var kv in manaCurve.OrderBy(k => k.Key))
                 {
                     string manaSymbols = "";
-                    for (int i = 0; i < kv.Key; i++)
+                    for (int i = 0; i < kv.Value; i++)
                     {
                         manaSymbols += "●";
                     }
@@ -283,7 +364,7 @@ public class DeckEvaluatorForm : Form
             }
             resultsTextBox.AppendText("\n");
 
-            // Mana Brackets
+            // ===== MANA BRACKET DISTRIBUTION =====
             resultsTextBox.SelectionFont = new Font(resultsTextBox.Font.FontFamily, 10, FontStyle.Bold);
             resultsTextBox.SelectionColor = Color.DarkGreen;
             resultsTextBox.AppendText("📈 Mana Brackets (Grouped):\n");
@@ -292,22 +373,31 @@ public class DeckEvaluatorForm : Form
             var manaBrackets = deck.GetManaBrackets();
             foreach (var kv in manaBrackets.OrderBy(k => k.Key))
             {
-                resultsTextBox.AppendText($"• {kv.Key} mana: {kv.Value} cards\n");
+                int percentage = nonLandCount > 0 ? (kv.Value * 100 / nonLandCount) : 0;
+                resultsTextBox.AppendText($"• {kv.Key} mana: {kv.Value} cards ({percentage}%)\n");
             }
             resultsTextBox.AppendText("\n");
 
-            // Card Types
+            // ===== CARD TYPE BREAKDOWN =====
             resultsTextBox.SelectionFont = new Font(resultsTextBox.Font.FontFamily, 10, FontStyle.Bold);
             resultsTextBox.AppendText("Card Types:\n");
             resultsTextBox.SelectionFont = resultsTextBox.Font;
-            var categories = deck.cards.Where(c => !c.IsLand).GroupBy(c => c.Category).ToDictionary(g => g.Key, g => g.Count());
-            foreach (var kv in categories.OrderBy(k => k.Key))
+            var categories = GetNonLandCategories(deck);
+            if (categories.Any())
             {
-                resultsTextBox.AppendText($"• {kv.Key}: {kv.Value} cards\n");
+                foreach (var kv in categories.OrderByDescending(k => k.Value))
+                {
+                    int percentage = nonLandCount > 0 ? (kv.Value * 100 / nonLandCount) : 0;
+                    resultsTextBox.AppendText($"• {kv.Key}: {kv.Value} cards ({percentage}%)\n");
+                }
+            }
+            else
+            {
+                resultsTextBox.AppendText("• No spells found\n");
             }
             resultsTextBox.AppendText("\n");
 
-            // Recommendations
+            // ===== RECOMMENDATIONS =====
             resultsTextBox.SelectionFont = new Font(resultsTextBox.Font.FontFamily, 10, FontStyle.Bold);
             resultsTextBox.SelectionColor = Color.DarkGreen;
             resultsTextBox.AppendText("Recommendations:\n");
@@ -332,7 +422,7 @@ public class DeckEvaluatorForm : Form
 
         // Parse commander if provided
         string commanderName = "";
-        Task<(int cost, List<string> colors, string type, string category)?>? commanderDataTask = null;
+        Task<(int cost, List<string> colors, string type, string category, string oracleText)?>? commanderDataTask = null;
         if (!string.IsNullOrWhiteSpace(commanderText))
         {
             commanderName = commanderText.Trim();
@@ -370,12 +460,14 @@ public class DeckEvaluatorForm : Form
             var colors = new List<string>();
             string type = "";
             string category = "Commander";
+            string oracleText = "";
             bool isLand = false;
             if (commanderData.HasValue)
             {
                 manaCost = commanderData.Value.cost;
                 colors = commanderData.Value.colors;
                 type = commanderData.Value.type;
+                oracleText = commanderData.Value.oracleText;
 
                 if (cardDatabase.TryGetValue(commanderName.Trim(), out var rec))
                 {
@@ -386,7 +478,7 @@ public class DeckEvaluatorForm : Form
                     isLand = type.IndexOf("land", StringComparison.OrdinalIgnoreCase) >= 0;
                 }
             }
-            deck.AddCard(new Card { Name = commanderName, IsLand = isLand, ManaCost = manaCost, Colors = colors, Type = type, Category = category });
+            deck.AddCard(new Card { Name = commanderName, IsLand = isLand, ManaCost = manaCost, Colors = colors, Type = type, Category = category, OracleText = oracleText });
         }
 
         // Add deck cards
@@ -399,6 +491,7 @@ public class DeckEvaluatorForm : Form
             var colors = new List<string>();
             string type = "";
             string category = "";
+            string oracleText = "";
             bool isLand = false;
 
             if (cardData.HasValue)
@@ -407,6 +500,7 @@ public class DeckEvaluatorForm : Form
                 colors = cardData.Value.colors;
                 type = cardData.Value.type;
                 category = cardData.Value.category;
+                oracleText = cardData.Value.oracleText;
 
                 // use database-dependent land flag first
                 if (cardDatabase.TryGetValue(cardName.Trim(), out var rec))
@@ -428,34 +522,34 @@ public class DeckEvaluatorForm : Form
 
             for (int j = 0; j < quantity; j++)
             {
-                deck.AddCard(new Card { Name = cardName, IsLand = isLand, ManaCost = manaCost, Colors = colors, Type = type, Category = category });
+                deck.AddCard(new Card { Name = cardName, IsLand = isLand, ManaCost = manaCost, Colors = colors, Type = type, Category = category, OracleText = oracleText });
             }
         }
 
         return deck;
     }
 
-    private Task<(int cost, List<string> colors, string type, string category)?> GetCardData(string name)
+    private Task<(int cost, List<string> colors, string type, string category, string oracleText)?> GetCardData(string name)
     {
         if (string.IsNullOrWhiteSpace(name))
-            return Task.FromResult<(int, List<string>, string, string)?>((0, new List<string>(), "", "Unknown"));
+            return Task.FromResult<(int, List<string>, string, string, string)?>((0, new List<string>(), "", "Unknown", ""));
 
         if (cardDatabase.TryGetValue(name.Trim(), out var rec))
         {
-            return Task.FromResult<(int, List<string>, string, string)?>(
-                (rec.ManaCost, rec.Colors, rec.Type, rec.Category));
+            return Task.FromResult<(int, List<string>, string, string, string)?>(
+                (rec.ManaCost, rec.Colors, rec.Type, rec.Category, rec.OracleText ?? ""));
         }
 
         // Fallback: if name not in DB, attempt case-insensitive partial matching
         var match = cardDatabase.Values.FirstOrDefault(c => string.Equals(c.Name, name.Trim(), StringComparison.OrdinalIgnoreCase));
         if (match != null)
         {
-            return Task.FromResult<(int, List<string>, string, string)?>(
-                (match.ManaCost, match.Colors, match.Type, match.Category));
+            return Task.FromResult<(int, List<string>, string, string, string)?>(
+                (match.ManaCost, match.Colors, match.Type, match.Category, match.OracleText ?? ""));
         }
 
         // Not found
-        return Task.FromResult<(int, List<string>, string, string)?>((0, new List<string>(), "Unknown", "Unknown"));
+        return Task.FromResult<(int, List<string>, string, string, string)?>((0, new List<string>(), "Unknown", "Unknown", ""));
     }
 
     private class CardDbRecord
@@ -466,6 +560,7 @@ public class DeckEvaluatorForm : Form
         public string Type { get; set; }
         public string Category { get; set; }
         public bool IsLand { get; set; }
+        public string OracleText { get; set; }
     }
 
     private int ParseManaCost(string manaCost)
@@ -558,6 +653,7 @@ public class Card
     public List<string> Colors { get; set; } = new List<string>();
     public string? Type { get; set; }
     public string? Category { get; set; } // e.g., Card Draw, Removal, etc.
+    public string? OracleText { get; set; } // Card ability text from Scryfall
 }
 
 public class Deck
@@ -611,12 +707,16 @@ public class SimulationResult
 {
     public int MissedLands { get; set; }
     public int LandsPlayed { get; set; }
+    public int CardsPlayable { get; set; }
+    public int IdleTurns { get; set; }
 }
 
 public class EvaluationResults
 {
     public double AverageMissedLands { get; set; }
     public double AverageLandsPlayed { get; set; }
+    public double AverageCardsPlayable { get; set; }
+    public double AverageIdleTurns { get; set; }
     public List<string> Recommendations { get; set; } = new List<string>();
 }
 
@@ -643,7 +743,9 @@ public class DeckEvaluator
         var evalResults = new EvaluationResults
         {
             AverageMissedLands = results.Average(r => r.MissedLands),
-            AverageLandsPlayed = results.Average(r => r.LandsPlayed)
+            AverageLandsPlayed = results.Average(r => r.LandsPlayed),
+            AverageCardsPlayable = results.Average(r => r.CardsPlayable),
+            AverageIdleTurns = results.Average(r => r.IdleTurns)
         };
 
         // Generate recommendations
@@ -658,6 +760,8 @@ public class DeckEvaluator
         var hand = new List<Card>();
         int landsPlayed = 0;
         int missedLands = 0;
+        int cardsPlayable = 0;
+        int idleTurns = 0;
 
         // Draw opening hand (7 cards)
         for (int i = 0; i < 7; i++)
@@ -674,6 +778,9 @@ public class DeckEvaluator
             }
         }
 
+        // Count playable spells in opening hand
+        cardsPlayable += hand.Count(c => !c.IsLand);
+
         // Simulate turns
         for (int turn = 1; turn <= maxTurns; turn++)
         {
@@ -685,190 +792,130 @@ public class DeckEvaluator
 
             // In goldfish, we play a land if we have one
             var landInHand = hand.FirstOrDefault(c => c.IsLand);
+            bool playedAnything = false;
+
             if (landInHand != null)
             {
                 hand.Remove(landInHand);
                 landsPlayed++;
+                playedAnything = true;
             }
             else
             {
                 missedLands++;
             }
+
+            // Count how many non-land spells could be played (simplified: count available in hand)
+            int playableSpells = hand.Count(c => !c.IsLand);
+            cardsPlayable += playableSpells;
+
+            // If nothing was played this turn, it's an idle turn
+            if (!playedAnything && playableSpells == 0)
+            {
+                idleTurns++;
+            }
         }
 
-        return new SimulationResult { MissedLands = missedLands, LandsPlayed = landsPlayed };
+        return new SimulationResult 
+        { 
+            MissedLands = missedLands, 
+            LandsPlayed = landsPlayed,
+            CardsPlayable = cardsPlayable,
+            IdleTurns = idleTurns
+        };
     }
 
     private void GenerateRecommendations(EvaluationResults results, Deck deck)
     {
-        // Land count recommendation
+        results.Recommendations.Add("\n=== MANA & LAND ANALYSIS ===");
+        
+        // Land count and mana recommendations
         int landCount = deck.LandCount;
+        int nonLandCount = deck.cards.Count - landCount;
+        double landPercentage = (landCount * 100.0 / deck.cards.Count);
+        
         if (results.AverageMissedLands > 2)
         {
-            results.Recommendations.Add("Consider adding more lands. You missed too many land drops.");
+            results.Recommendations.Add($"🚨 HIGH PRIORITY: Avg {results.AverageMissedLands:F2} missed land drops. Add {Math.Ceiling(results.AverageMissedLands)} more lands (currently {landCount} / {landPercentage:F1}%)");
         }
-        else if (results.AverageMissedLands < 0.5)
+        else if (results.AverageMissedLands < 0.2)
         {
-            results.Recommendations.Add("You might have too many lands. Consider reducing land count.");
+            results.Recommendations.Add($"💡 Excess lands: Avg {results.AverageMissedLands:F2} missed drops suggests {landCount - 2}-{landCount - 4} lands might work better");
         }
         else
         {
-            results.Recommendations.Add("Land count seems balanced.");
+            results.Recommendations.Add($"✓ Lands optimal: {landCount} lands ({landPercentage:F1}%) - {results.AverageMissedLands:F2} avg missed drops");
         }
 
-        // Mana curve
+        // Mana Curve Projection
+        results.Recommendations.Add("\n=== MANA CURVE PROJECTION ===");
         var manaCurve = deck.GetManaCurve();
         int lowCost = manaCurve.Where(kv => kv.Key <= 2).Sum(kv => kv.Value);
         int midCost = manaCurve.Where(kv => kv.Key >= 3 && kv.Key <= 4).Sum(kv => kv.Value);
         int highCost = manaCurve.Where(kv => kv.Key >= 5).Sum(kv => kv.Value);
+        
+        double lowPct = (lowCost * 100.0 / nonLandCount);
+        double midPct = (midCost * 100.0 / nonLandCount);
+        double highPct = (highCost * 100.0 / nonLandCount);
+        
+        results.Recommendations.Add($"Early (0-2): {lowCost} cards ({lowPct:F1}%) - {'░░░░░░░░░░'.Substring(0, (int)(lowPct/10))}");
+        results.Recommendations.Add($"Mid (3-4):   {midCost} cards ({midPct:F1}%) - {'░░░░░░░░░░'.Substring(0, (int)(midPct/10))}");
+        results.Recommendations.Add($"Late (5+):   {highCost} cards ({highPct:F1}%) - {'░░░░░░░░░░'.Substring(0, (int)(highPct/10))}");
 
-        if (highCost > lowCost + midCost)
+        if (highCost > lowCost * 1.5)
         {
-            results.Recommendations.Add("Your mana curve is top-heavy. Add more low-cost spells.");
+            results.Recommendations.Add($"📊 Top-heavy curve detected. Add {Math.Ceiling((highCost - lowCost) / 2.0)} low-cost spells.");
         }
-        else if (lowCost > midCost + highCost)
+        else if (lowCost > highCost * 2)
         {
-            results.Recommendations.Add("Too many low-cost spells. Add some higher-cost cards for better curve.");
+            results.Recommendations.Add($"📊 Consider adding {Math.Ceiling((lowCost - highCost) / 3.0)} higher-cost finishers.");
         }
         else
         {
-            results.Recommendations.Add("Mana curve looks good.");
+            results.Recommendations.Add($"✓ Mana curve is well-balanced");
         }
 
-        // Card types
-        var categories = deck.cards.Where(c => !c.IsLand).GroupBy(c => c.Category).ToDictionary(g => g.Key, g => g.Count());
-        int totalSpells = deck.cards.Count(c => !c.IsLand);
+        // Creature Analysis (using Type field for accuracy)
+        results.Recommendations.Add("\n=== CREATURE & SPELL BREAKDOWN ===");
+        int creatureCount = deck.cards.Count(c => !c.IsLand && c.Type != null && c.Type.IndexOf("Creature", StringComparison.OrdinalIgnoreCase) >= 0);
+        int instantCount = deck.cards.Count(c => !c.IsLand && c.Type != null && c.Type.IndexOf("Instant", StringComparison.OrdinalIgnoreCase) >= 0);
+        int sorceryCount = deck.cards.Count(c => !c.IsLand && c.Type != null && c.Type.IndexOf("Sorcery", StringComparison.OrdinalIgnoreCase) >= 0);
+        int artifactCount = deck.cards.Count(c => !c.IsLand && c.Type != null && c.Type.IndexOf("Artifact", StringComparison.OrdinalIgnoreCase) >= 0);
+        int enchantmentCount = deck.cards.Count(c => !c.IsLand && c.Type != null && c.Type.IndexOf("Enchantment", StringComparison.OrdinalIgnoreCase) >= 0);
+        int planeswalkerCount = deck.cards.Count(c => !c.IsLand && c.Type != null && c.Type.IndexOf("Planeswalker", StringComparison.OrdinalIgnoreCase) >= 0);
 
-        // Card Draw
-        if (categories.ContainsKey("Card Draw"))
-        {
-            int count = categories["Card Draw"];
-            if (count < 8)
-                results.Recommendations.Add($"Card Draw: {count} (suggest adding {8 - count} more for better consistency)");
-            else if (count > 15)
-                results.Recommendations.Add($"Card Draw: {count} (consider reducing to avoid flooding)");
-            else
-                results.Recommendations.Add($"Card Draw: {count} (balanced)");
-        }
+        if (creatureCount < 10)
+            results.Recommendations.Add($"⚠️  Creatures: {creatureCount} - Add {10 - creatureCount} for better board presence");
+        else if (creatureCount < 20)
+            results.Recommendations.Add($"✓ Creatures: {creatureCount} - Good foundation for board development");
+        else if (creatureCount <= 28)
+            results.Recommendations.Add($"✓ Creatures: {creatureCount} - Strong creature count");
         else
-        {
-            results.Recommendations.Add("Card Draw: 0 (add 8-12 card draw spells for better deck consistency)");
-        }
+            results.Recommendations.Add($"⚠️  Creatures: {creatureCount} - Consider focusing on instant/sorcery strategy");
 
-        // Removal
-        if (categories.ContainsKey("Removal"))
-        {
-            int count = categories["Removal"];
-            if (count < 6)
-                results.Recommendations.Add($"Removal: {count} (suggest adding {6 - count} more for better board control)");
-            else if (count > 12)
-                results.Recommendations.Add($"Removal: {count} (consider reducing to focus on other strategies)");
-            else
-                results.Recommendations.Add($"Removal: {count} (balanced)");
-        }
+        if (instantCount + sorceryCount >= 12)
+            results.Recommendations.Add($"✓ Instants/Sorceries: {instantCount + sorceryCount} - Good spell base for interaction");
         else
-        {
-            results.Recommendations.Add("Removal: 0 (add 6-10 removal spells for board control)");
-        }
+            results.Recommendations.Add($"⚠️  Instants/Sorceries: {instantCount + sorceryCount} - Add {8 - (instantCount + sorceryCount)} more for protection/removal");
 
-        // Creatures
-        if (categories.ContainsKey("Creature"))
-        {
-            int count = categories["Creature"];
-            if (count < 15)
-                results.Recommendations.Add($"Creatures: {count} (suggest adding {15 - count} more for better board presence)");
-            else if (count > 25)
-                results.Recommendations.Add($"Creatures: {count} (consider reducing to focus on other card types)");
-            else
-                results.Recommendations.Add($"Creatures: {count} (balanced)");
-        }
-        else
-        {
-            results.Recommendations.Add("Creatures: 0 (add 15-25 creatures for board presence)");
-        }
+        if (artifactCount > 0)
+            results.Recommendations.Add($"Artifacts: {artifactCount} - {(artifactCount < 5 ? "Utility pieces" : "Strong artifact synergy")}");
 
-        // Counterspells
-        if (categories.ContainsKey("Counterspell"))
-        {
-            int count = categories["Counterspell"];
-            if (count > 8)
-                results.Recommendations.Add($"Counterspells: {count} (consider reducing if not playing control)");
-            else
-                results.Recommendations.Add($"Counterspells: {count} (reasonable for control decks)");
-        }
+        if (enchantmentCount > 0)
+            results.Recommendations.Add($"Enchantments: {enchantmentCount}");
 
-        // Tutors
-        if (categories.ContainsKey("Tutor"))
-        {
-            int count = categories["Tutor"];
-            if (count > 6)
-                results.Recommendations.Add($"Tutors: {count} (consider reducing to avoid mana flood)");
-            else
-                results.Recommendations.Add($"Tutors: {count} (good for consistency)");
-        }
+        if (planeswalkerCount > 0)
+            results.Recommendations.Add($"Planeswalkers: {planeswalkerCount}");
 
-        // Board Wipes
-        if (categories.ContainsKey("Board Wipe"))
-        {
-            int count = categories["Board Wipe"];
-            if (count > 4)
-                results.Recommendations.Add($"Board Wipes: {count} (consider reducing to avoid over-reliance)");
-            else
-                results.Recommendations.Add($"Board Wipes: {count} (good for control)");
-        }
-
-        // Protection
-        if (categories.ContainsKey("Protection"))
-        {
-            int count = categories["Protection"];
-            results.Recommendations.Add($"Protection: {count} (ensure they protect key threats)");
-        }
-
-        // Extra Turn
-        if (categories.ContainsKey("Extra Turn"))
-        {
-            int count = categories["Extra Turn"];
-            if (count > 2)
-                results.Recommendations.Add($"Extra Turn: {count} (powerful but consider redundancy)");
-            else
-                results.Recommendations.Add($"Extra Turn: {count} (great finishers)");
-        }
-
-        // Artifacts
-        if (categories.ContainsKey("Artifact"))
-        {
-            int count = categories["Artifact"];
-            results.Recommendations.Add($"Artifacts: {count} (ensure they fit your mana curve)");
-        }
-
-        // Equipment
-        if (categories.ContainsKey("Equipment"))
-        {
-            int count = categories["Equipment"];
-            results.Recommendations.Add($"Equipment: {count} (attach to your creatures)");
-        }
-
-        // Enchantments
-        if (categories.ContainsKey("Enchantment"))
-        {
-            int count = categories["Enchantment"];
-            results.Recommendations.Add($"Enchantments: {count} (ensure they provide value)");
-        }
-
-        // Planeswalkers
-        if (categories.ContainsKey("Planeswalker"))
-        {
-            int count = categories["Planeswalker"];
-            if (count > 4)
-                results.Recommendations.Add($"Planeswalkers: {count} (consider reducing to focus on other strategies)");
-            else
-                results.Recommendations.Add($"Planeswalkers: {count} (reasonable number)");
-        }
-
-        // Other categories
-        foreach (var kv in categories.Where(kv => !new[] { "Card Draw", "Removal", "Creature", "Counterspell", "Tutor", "Board Wipe", "Protection", "Extra Turn", "Artifact", "Equipment", "Enchantment", "Planeswalker" }.Contains(kv.Key)))
-        {
-            results.Recommendations.Add($"{kv.Key}: {kv.Value} (consider if this fits your strategy)");
-        }
+        // Playability Analysis
+        results.Recommendations.Add("\n=== PLAYABILITY METRICS ===");
+        double cardsPerTurn = results.AverageCardsPlayable / 10.0; // Over 10 turns
+        results.Recommendations.Add($"Average cards playable per turn: {cardsPerTurn:F2}");
+        results.Recommendations.Add($"Average idle turns: {results.AverageIdleTurns:F2} out of 10");
+        
+        if (results.AverageIdleTurns > 2)
+            results.Recommendations.Add($"⚠️  Too many idle turns. Consider adding more low-cost cards or mana acceleration.");
+        else if (results.AverageIdleTurns < 0.5)
+            results.Recommendations.Add($"✓ Excellent consistency - plenty to play each turn!");
     }
 }

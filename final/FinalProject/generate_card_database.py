@@ -35,12 +35,13 @@ with open(json_path, 'r', encoding='utf-8') as f:
     cards = json.load(f)
 
 with open(csv_path, 'w', encoding='utf-8') as f:
-    f.write('Name,ManaCost,Colors,Type,Category,IsLand\n')
+    f.write('Name,ManaCost,Colors,Type,Category,IsLand,OracleText\n')
     for c in cards:
         name = c.get('name', '').replace('"', '').replace('\n', ' ').strip()
         mana_cost = c.get('cmc', 0)
         colors = ';'.join(c.get('colors', []))
         type_line = c.get('type_line', '').replace(',', ' ').strip()
+        oracle_text = c.get('oracle_text', '').replace('"', '""').replace('\n', ' ').strip()
         category = 'Land' if 'Land' in type_line else (
             'Creature' if 'Creature' in type_line else (
             'Instant/Sorcery' if 'Instant' in type_line or 'Sorcery' in type_line else (
@@ -51,6 +52,6 @@ with open(csv_path, 'w', encoding='utf-8') as f:
         # Escaping commas by replacing with space in name and type
         clean_name = name.replace(',', ' ') 
         clean_type = type_line.replace(',', ' ')
-        f.write(f'{clean_name},{mana_cost},{colors},{clean_type},{category},{is_land}\n')
+        f.write(f'{clean_name},{mana_cost},{colors},{clean_type},{category},{is_land},"{oracle_text}"\n')
 
 print('Generated cards.csv (all cards).')
