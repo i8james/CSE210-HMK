@@ -1,0 +1,7 @@
+{
+    "chat.tools.terminal.autoApprove": {
+        "dotnet run": true,
+        "dotnet build": true,
+        ".\\FinalProject.exe": true
+    }
+}
