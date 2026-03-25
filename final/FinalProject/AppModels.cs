@@ -122,5 +122,6 @@ public class EvaluationResults
     public double AverageCommanderCastTurn { get; set; }
     public double CommanderCastRate { get; set; }
     public int LearningGamesSeen { get; set; }
+    public bool IsCedh { get; set; }
     public List<string> Recommendations { get; set; } = new List<string>();
 }

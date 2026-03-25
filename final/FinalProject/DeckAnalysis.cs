@@ -16,9 +16,64 @@ public enum DeckArchetype
 
 public static class DeckAnalysis
 {
+    private static readonly HashSet<string> NonLandCoreTypes = new HashSet<string>(StringComparer.OrdinalIgnoreCase)
+    {
+        "Creature",
+        "Artifact",
+        "Enchantment",
+        "Instant",
+        "Sorcery",
+        "Planeswalker",
+        "Battle"
+    };
+
+    private static bool IsLandByTypeLine(string? typeLine)
+    {
+        if (string.IsNullOrWhiteSpace(typeLine))
+            return false;
+
+        string normalized = typeLine.Replace("â€”", "—");
+        var faces = normalized.Split(new[] { "//" }, StringSplitOptions.RemoveEmptyEntries);
+        bool sawLandFace = false;
+        bool sawNonLandFace = false;
+
+        foreach (var face in faces)
+        {
+            string front = face;
+            int dashIndex = front.IndexOf('—');
+            if (dashIndex >= 0)
+                front = front.Substring(0, dashIndex);
+
+            var tokens = front
+                .Split(new[] { ' ' }, StringSplitOptions.RemoveEmptyEntries)
+                .Select(token => token.Trim())
+                .ToList();
+            if (!tokens.Any())
+                continue;
+
+            bool faceHasLand = tokens.Contains("Land", StringComparer.OrdinalIgnoreCase);
+            bool faceHasNonLandCore = tokens.Any(token => NonLandCoreTypes.Contains(token));
+
+            if (faceHasLand)
+                sawLandFace = true;
+            if (faceHasNonLandCore)
+                sawNonLandFace = true;
+        }
+
+        return sawLandFace && !sawNonLandFace;
+    }
+
+    private static bool IsLandCard(Card card)
+    {
+        if (!string.IsNullOrWhiteSpace(card.Type))
+            return IsLandByTypeLine(card.Type);
+
+        return card.IsLand;
+    }
+
     public static bool IsNonLand(Card card)
     {
-        return !card.IsLand && (card.Type == null || card.Type.IndexOf("Land", StringComparison.OrdinalIgnoreCase) < 0);
+        return !IsLandCard(card);
     }
 
     public static HashSet<string> GetCategoryTags(Card card)

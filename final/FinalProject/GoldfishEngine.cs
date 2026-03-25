@@ -695,6 +695,7 @@ public class DeckEvaluator
 {
     private readonly Deck _deck;
     private readonly DeckArchetype _selectedArchetype;
+    private readonly bool _isCedh;
 
     private sealed class ArchetypeTargets
     {
@@ -723,9 +724,10 @@ public class DeckEvaluator
         public List<string> Signals { get; init; } = new List<string>();
     }
 
-    public DeckEvaluator(Deck deck, DeckArchetype? archetypeOverride = null)
+    public DeckEvaluator(Deck deck, DeckArchetype? archetypeOverride = null, bool isCedh = false)
     {
         _deck = deck;
+        _isCedh = isCedh;
         _selectedArchetype = archetypeOverride ?? DeckAnalysis.DetectPrimaryArchetype(deck);
     }
 
@@ -776,6 +778,7 @@ public class DeckEvaluator
             LearningGamesSeen = bot.LearnedGames
         };
 
+        evaluation.IsCedh = _isCedh;
         var powerAssessment = AssessPowerLevel(evaluation, _deck);
         evaluation.EstimatedPowerLevel = powerAssessment.PowerLevel;
         evaluation.EstimatedBracket = powerAssessment.Bracket;
@@ -789,6 +792,9 @@ public class DeckEvaluator
 
     private PowerLevelAssessment AssessPowerLevel(EvaluationResults results, Deck deck)
     {
+        if (_isCedh)
+            return AssessCedhPowerLevel(results, deck);
+
         int rampCount = DeckAnalysis.CountRoleCards(deck, "Ramp");
         int drawCount = DeckAnalysis.CountRoleCards(deck, "Card Draw");
         int removalCount = DeckAnalysis.CountRoleCards(deck, "Removal");
@@ -955,6 +961,122 @@ public class DeckEvaluator
         };
     }
 
+    private PowerLevelAssessment AssessCedhPowerLevel(EvaluationResults results, Deck deck)
+    {
+        int fastManaCount = deck.Cards.Count(c => !c.IsLand && c.ManaCost <= 1 && DeckAnalysis.GetCategoryTags(c).Contains("Ramp"));
+        int tutorCount = DeckAnalysis.CountRoleCards(deck, "Tutor");
+        int counterCount = DeckAnalysis.CountRoleCards(deck, "Counterspell");
+        int comboCount = DeckAnalysis.DetectComboPieces(deck).Sum(g => g.Cards.Count);
+        double avgNonLandCmc = deck.Cards.Where(c => !c.IsLand && !c.IsCommander).Any()
+            ? deck.Cards.Where(c => !c.IsLand && !c.IsCommander).Average(c => c.ManaCost)
+            : 3.0;
+
+        double score = 4.5;
+        var positiveSignals = new List<string>();
+        var limitingSignals = new List<string>();
+
+        if (fastManaCount >= 8) { score += 2.5; positiveSignals.Add($"Elite fast-mana package ({fastManaCount} 0-1 CMC ramp pieces)"); }
+        else if (fastManaCount >= 5) { score += 1.5; positiveSignals.Add($"Strong fast-mana density ({fastManaCount} pieces)"); }
+        else if (fastManaCount >= 3) { score += 0.6; }
+        else { score -= 1.5; limitingSignals.Add($"Severely lacking fast mana ({fastManaCount} pieces) — not viable at cEDH tables"); }
+
+        if (tutorCount >= 10) { score += 2.0; positiveSignals.Add($"Elite tutor density ({tutorCount}) — win conditions are consistently accessible"); }
+        else if (tutorCount >= 7) { score += 1.2; positiveSignals.Add($"Strong tutor suite ({tutorCount}) for consistent game plans"); }
+        else if (tutorCount >= 4) { score += 0.4; }
+        else { score -= 1.5; limitingSignals.Add($"Tutor count is too low for cEDH ({tutorCount}) — needs 7+ to assemble win conditions"); }
+
+        if (comboCount >= 8) { score += 1.5; positiveSignals.Add($"Dense combo architecture ({comboCount} combo-linked pieces)"); }
+        else if (comboCount >= 4) { score += 0.7; positiveSignals.Add($"Defined combo win condition ({comboCount} combo pieces)"); }
+        else { score -= 0.8; limitingSignals.Add($"Low combo density ({comboCount}) — cEDH requires a compact, tutorable two-card win condition"); }
+
+        if (avgNonLandCmc < 2.0) { score += 1.5; positiveSignals.Add($"Elite avg non-land CMC ({avgNonLandCmc:F2}) — hallmark of optimized cEDH pace"); }
+        else if (avgNonLandCmc < 2.5) { score += 0.7; positiveSignals.Add($"Low CMC profile ({avgNonLandCmc:F2}) supports fast deployment"); }
+        else if (avgNonLandCmc > 3.0) { score -= 1.2; limitingSignals.Add($"High avg CMC ({avgNonLandCmc:F2}) — trim 4+ CMC spells not part of win conditions"); }
+        else if (avgNonLandCmc > 2.5) { score -= 0.5; limitingSignals.Add($"CMC ({avgNonLandCmc:F2}) is marginally high for cEDH"); }
+
+        if (counterCount >= 8) { score += 1.0; positiveSignals.Add($"Heavy counterspell suite ({counterCount}) provides strong reactive game"); }
+        else if (counterCount >= 5) { score += 0.5; }
+        else if (counterCount < 3) { score -= 0.7; limitingSignals.Add($"Counter suite is thin ({counterCount}) — add Force of Will, Fierce Guardianship, Pact of Negation"); }
+
+        if (results.AverageManaEfficiency >= 80) { score += 0.8; positiveSignals.Add($"Exceptional mana efficiency ({results.AverageManaEfficiency:F1}%)"); }
+        else if (results.AverageManaEfficiency < 60) { score -= 0.5; limitingSignals.Add($"Mana efficiency gap ({results.AverageManaEfficiency:F1}%) — trim dead cards and add low-CMC value"); }
+
+        if (results.AverageEarlyTurnActions >= 3.0) { score += 0.8; positiveSignals.Add($"Excellent T1-T3 development ({results.AverageEarlyTurnActions:F2} avg actions)"); }
+        else if (results.AverageEarlyTurnActions < 2.0) { score -= 0.8; limitingSignals.Add($"Slow early setup ({results.AverageEarlyTurnActions:F2} T1-T3 actions) — cEDH requires proactive early plays"); }
+
+        score = Math.Max(1.0, Math.Min(10.0, score));
+
+        string bracket, summary;
+        if (score >= 8.5) { bracket = "cEDH Competitive"; summary = "Optimized for cEDH tables. Fast mana, high tutor density, and compact win conditions are all present."; }
+        else if (score >= 7.0) { bracket = "High Power / Near-cEDH"; summary = "Close to cEDH but missing a few key optimizations."; }
+        else if (score >= 5.5) { bracket = "Bracket 4 \u2014 Not cEDH-Ready"; summary = "Strong deck but missing cEDH fundamentals. Focus on fast mana, tutors, and lowering average CMC."; }
+        else { bracket = "Below cEDH Threshold"; summary = "Not currently cEDH-viable. Needs major upgrades in fast mana, tutors, and a compact win condition."; }
+
+        var signals = positiveSignals.Take(3).Concat(limitingSignals.Take(3)).ToList();
+        if (!signals.Any()) signals.Add("Deck metrics are ambiguous for cEDH evaluation.");
+        return new PowerLevelAssessment { PowerLevel = score, Bracket = bracket, Summary = summary, Signals = signals };
+    }
+
+    private static ArchetypeTargets GetCedhTargets(DeckArchetype archetype)
+    {
+        int landsMin = 27, landsMax = 32;
+        int rampMin = 12, rampMax = 22;
+        int drawMin = 12, drawMax = 20;
+        int interactionMin = 15, interactionMax = 28;
+        int tutorMin = 7, tutorMax = 16;
+        int creatureMin, creatureMax, isMin, isMax;
+        string focus;
+
+        switch (archetype)
+        {
+            case DeckArchetype.Combo:
+                creatureMin = 4; creatureMax = 16;
+                isMin = 22; isMax = 40;
+                tutorMin = 10; tutorMax = 18;
+                focus = "cEDH Combo: assemble a two-card win by T2-T4 using fast mana and tutors; protect the setup with hard counters; trim anything not finding or protecting the combo.";
+                break;
+            case DeckArchetype.Spellslinger:
+                creatureMin = 4; creatureMax = 14;
+                isMin = 26; isMax = 42;
+                focus = "cEDH Spellslinger: cantrip aggressively, chain cheap spells, and close games before T5 with a storm or chain-of-spells finish.";
+                break;
+            case DeckArchetype.Tribal:
+                creatureMin = 20; creatureMax = 32;
+                isMin = 14; isMax = 26;
+                landsMin = 28; landsMax = 33;
+                focus = "cEDH Tribal: maximize tribal synergy and deploy threats ahead of curve using fast mana; ensure the disruption suite can answer win conditions at speed.";
+                break;
+            case DeckArchetype.Ramp:
+                creatureMin = 8; creatureMax = 20;
+                isMin = 16; isMax = 28;
+                rampMin = 16; rampMax = 26;
+                focus = "cEDH Ramp: use rituals, mana rocks, and fast mana to generate explosive leads; convert to infinite mana or Eldrazi-type closers.";
+                break;
+            case DeckArchetype.Tokens:
+                creatureMin = 12; creatureMax = 22;
+                isMin = 16; isMax = 28;
+                focus = "cEDH Tokens: deploy token engines quickly via fast mana and generate a board-wide win before T4; include protection from board wipes.";
+                break;
+            default:
+                creatureMin = 6; creatureMax = 18;
+                isMin = 22; isMax = 38;
+                focus = "cEDH: prioritize fast mana, 8+ tutors, hard interaction (Force of Will, Fierce Guardianship), and a reliable T3-T4 win condition.";
+                break;
+        }
+
+        return new ArchetypeTargets
+        {
+            LandsMin = landsMin, LandsMax = landsMax,
+            RampMin = rampMin, RampMax = rampMax,
+            DrawMin = drawMin, DrawMax = drawMax,
+            InteractionMin = interactionMin, InteractionMax = interactionMax,
+            CreatureMin = creatureMin, CreatureMax = creatureMax,
+            InstantSorceryMin = isMin, InstantSorceryMax = isMax,
+            TutorMin = tutorMin, TutorMax = tutorMax,
+            FocusSummary = focus
+        };
+    }
+
     private static ArchetypeTargets GetArchetypeTargets(DeckArchetype archetype)
     {
         return archetype switch
@@ -1073,7 +1195,9 @@ public class DeckEvaluator
     private void GenerateRecommendations(EvaluationResults results, Deck deck, int maxTurns)
     {
         var archetype = results.SelectedArchetype;
-        var targets = GetArchetypeTargets(archetype);
+        var targets = _isCedh ? GetCedhTargets(archetype) : GetArchetypeTargets(archetype);
+        if (_isCedh)
+            GenerateCedhRecommendations(results, deck);
 
         static string FormatNameList(IEnumerable<string> names)
         {
@@ -1307,5 +1431,99 @@ public class DeckEvaluator
 
         if (deck.Commander != null && results.CommanderCastRate < 65)
             results.Recommendations.Add("⚠️  The commander is not coming down often enough in goldfish lines. Add more ramp, reduce clunky early plays, or lower the density of reactive spells that crowd out commander turns.");
+    }
+
+    private void GenerateCedhRecommendations(EvaluationResults results, Deck deck)
+    {
+        static string FormatList(IEnumerable<string> names)
+        {
+            var list = names.Where(s => !string.IsNullOrWhiteSpace(s)).Distinct(StringComparer.OrdinalIgnoreCase).Take(6).ToList();
+            return list.Any() ? string.Join(", ", list) : "none found";
+        }
+
+        results.Recommendations.Add("\n=== \u2694 cEDH COMPETITIVE EVALUATION ===");
+        results.Recommendations.Add("Evaluating against cEDH standards: fast mana, tutors, low avg CMC, compact win conditions, hard interaction.");
+
+        // Fast mana (0-1 CMC ramp)
+        int fastManaCount = deck.Cards.Count(c => !c.IsLand && c.ManaCost <= 1 && DeckAnalysis.GetCategoryTags(c).Contains("Ramp"));
+        string fastManaNames = FormatList(deck.Cards
+            .Where(c => !c.IsLand && c.ManaCost <= 1 && DeckAnalysis.GetCategoryTags(c).Contains("Ramp"))
+            .Select(c => c.Name ?? string.Empty));
+        results.Recommendations.Add($"\n[cEDH] Fast Mana (0-1 CMC ramp): {fastManaCount} pieces \u2014 {fastManaNames}");
+        if (fastManaCount < 5)
+            results.Recommendations.Add("🚨 cEDH PRIORITY: Add more fast mana. Minimum package: Sol Ring, Mana Crypt, Jeweled Lotus, Chrome Mox or Mox Diamond, Dark Ritual or similar.");
+        else if (fastManaCount < 8)
+            results.Recommendations.Add("⚠️  Fast mana present but below cEDH elite tier. Consider Mana Vault, Lion's Eye Diamond, Mox Diamond, Jeweled Lotus.");
+        else
+            results.Recommendations.Add("✓ Fast mana package meets cEDH expectations.");
+
+        // Tutors
+        int tutorCount = DeckAnalysis.CountRoleCards(deck, "Tutor");
+        string tutorNames = FormatList(deck.Cards
+            .Where(c => !c.IsLand && DeckAnalysis.GetCategoryTags(c).Contains("Tutor"))
+            .Select(c => c.Name ?? string.Empty));
+        results.Recommendations.Add($"\n[cEDH] Tutors: {tutorCount} \u2014 {tutorNames}");
+        if (tutorCount < 5)
+            results.Recommendations.Add("🚨 cEDH PRIORITY: Tutor density is critical. Add Demonic Tutor, Vampiric Tutor, Imperial Seal, Mystical Tutor, Enlightened Tutor (by color).");
+        else if (tutorCount < 8)
+            results.Recommendations.Add("⚠️  Tutor suite is developing. cEDH typically wants 8-12+ tutors for consistent assembly.");
+        else
+            results.Recommendations.Add("✓ Tutor density is cEDH-caliber.");
+
+        // Counterspell suite
+        int counterCount = DeckAnalysis.CountRoleCards(deck, "Counterspell");
+        string counterNames = FormatList(deck.Cards
+            .Where(c => !c.IsLand && DeckAnalysis.GetCategoryTags(c).Contains("Counterspell"))
+            .Select(c => c.Name ?? string.Empty));
+        results.Recommendations.Add($"\n[cEDH] Counterspells: {counterCount} \u2014 {counterNames}");
+        if (counterCount < 5)
+            results.Recommendations.Add("⚠️  Counter suite is thin. Add: Force of Will, Force of Negation, Fierce Guardianship, Pact of Negation, Counterspell, Dispel.");
+        else
+            results.Recommendations.Add("✓ Counter suite is solid for cEDH.");
+
+        // Average CMC
+        var nonLandSpells = deck.Cards.Where(c => !c.IsLand && !c.IsCommander).ToList();
+        double avgCmc = nonLandSpells.Any() ? nonLandSpells.Average(c => c.ManaCost) : 0;
+        results.Recommendations.Add($"\n[cEDH] Avg non-land CMC: {avgCmc:F2}  (target: <2.5, elite: <2.0)");
+        if (avgCmc > 3.0)
+            results.Recommendations.Add("🚨 cEDH PRIORITY: Avg CMC is too high. Trim spells \u22655 CMC and replace with efficient 1-2 CMC equivalents — cEDH ends by T3-T4.");
+        else if (avgCmc > 2.5)
+            results.Recommendations.Add("⚠️  CMC is elevated. Each 5+ CMC card not in your win condition is likely dead at cEDH tables.");
+        else if (avgCmc < 2.0)
+            results.Recommendations.Add("✓ Low CMC profile — this list can develop at cEDH speed.");
+        else
+            results.Recommendations.Add("✓ CMC acceptable. Continue trimming cards above 3 that don't contribute to wins.");
+
+        // Combo / win conditions
+        var comboPieces = DeckAnalysis.DetectComboPieces(deck);
+        int comboCount = comboPieces.Sum(g => g.Cards.Count);
+        results.Recommendations.Add($"\n[cEDH] Combo density: {comboCount} combo-linked cards across {comboPieces.Count} cluster(s)");
+        if (comboCount < 3)
+            results.Recommendations.Add("🚨 cEDH PRIORITY: No functional combo detected. cEDH needs a compact tutored two-card win (e.g., Thassa's Oracle + Demonic Consultation, Isochron Scepter + Dramatic Reversal + mana).");
+        else if (comboCount < 6)
+            results.Recommendations.Add("⚠️  Combo exists but may not be streamlined. Ensure all pieces are tutorable and protected.");
+        else
+            results.Recommendations.Add("✓ Combo architecture is on track. Verify every piece has 2+ tutor lines.");
+
+        // Spot removal
+        int removalCount = DeckAnalysis.CountRoleCards(deck, "Removal");
+        results.Recommendations.Add($"\n[cEDH] Targeted removal: {removalCount}");
+        if (removalCount < 6)
+            results.Recommendations.Add("⚠️  Low removal. cEDH staples: Swords to Plowshares, Path to Exile, Abrupt Decay, Cyclonic Rift, Nature's Claim, Assassin's Trophy.");
+        else
+            results.Recommendations.Add("✓ Removal count meets cEDH minimum. Prioritize instant-speed and low-CMC options.");
+
+        // Early development
+        results.Recommendations.Add($"\n[cEDH] T1-T3 avg actions: {results.AverageEarlyTurnActions:F2} (cEDH target: \u22652.5)");
+        if (results.AverageEarlyTurnActions < 2.5)
+            results.Recommendations.Add("⚠️  Early development is below cEDH pace. Add more 0-2 CMC plays so the deck impacts the game in the first three turns.");
+        else
+            results.Recommendations.Add("✓ Early game development is competitive-pace.");
+
+        results.Recommendations.Add("\n[cEDH] Staple reference by role:");
+        results.Recommendations.Add("  Fast Mana: Mana Crypt, Jeweled Lotus, Chrome Mox, Mox Diamond, Dark Ritual, Elvish Spirit Guide");
+        results.Recommendations.Add("  Tutors: Demonic Tutor, Vampiric Tutor, Imperial Seal, Mystical Tutor, Ranger-Captain of Eos");
+        results.Recommendations.Add("  Protection: Force of Will, Fierce Guardianship, Pact of Negation, Swan Song, Silence");
+        results.Recommendations.Add("  Win Cons: Thassa's Oracle + Consultation, Isochron Scepter + Dramatic Reversal, Ad Nauseam, Food Chain");
     }
 }

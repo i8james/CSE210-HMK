@@ -15,6 +15,31 @@ using System.Windows.Forms;
 public class DeckEvaluatorForm : Form
 {
     private static readonly HttpClient Http = new HttpClient();
+    private static readonly HashSet<string> NonLandCoreTypes = new HashSet<string>(StringComparer.OrdinalIgnoreCase)
+    {
+        "Creature",
+        "Artifact",
+        "Enchantment",
+        "Instant",
+        "Sorcery",
+        "Planeswalker",
+        "Battle"
+    };
+    private static readonly HashSet<string> RoleTags = new HashSet<string>(StringComparer.OrdinalIgnoreCase)
+    {
+        "Removal",
+        "Card Draw",
+        "Board Wipe",
+        "Ramp",
+        "Tutor",
+        "Counterspell",
+        "Token Generation",
+        "Recursion",
+        "Protection",
+        "Life Gain",
+        "Discard",
+        "Stax"
+    };
 
     private readonly Dictionary<string, CardDbRecord> cardDatabase = new Dictionary<string, CardDbRecord>(StringComparer.OrdinalIgnoreCase);
     private readonly Dictionary<string, CardDbRecord> normalizedCardIndex = new Dictionary<string, CardDbRecord>(StringComparer.OrdinalIgnoreCase);
@@ -36,24 +61,30 @@ public class DeckEvaluatorForm : Form
     private Button saveReportButton = null!;
     private Button trainButton = null!;
     private ComboBox archetypeComboBox = null!;
+    private ComboBox gamesComboBox = null!;
+    private CheckBox cedhCheckBox = null!;
+    private System.Windows.Forms.Timer? _wizardTimer;
+    private int _wizardFrame;
 
     public DeckEvaluatorForm()
     {
-        cardDatabaseFilePath = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "cards.csv");
-        Text = "MTG Commander Deck Evaluator";
+        cardDatabaseFilePath = ResolveCardDatabaseFilePath();
+        Text = "Dennis's Deck Device";
         Size = new Size(900, 740);
         MinimumSize = new Size(860, 700);
-        BackColor = Color.FromArgb(246, 248, 252);
+        BackColor = Color.FromArgb(18, 12, 36);
         StartPosition = FormStartPosition.CenterScreen;
 
         var titleLabel = new Label
         {
-            Text = "Magic: The Gathering Commander Deck Evaluator",
-            Font = new Font("Segoe UI", 16, FontStyle.Bold),
-            ForeColor = Color.FromArgb(31, 41, 55),
+            Text = "✦  Dennis's Deck Device  ✦",
+            Font = new Font("Segoe UI", 17, FontStyle.Bold),
+            ForeColor = Color.FromArgb(250, 204, 21),
             TextAlign = ContentAlignment.MiddleCenter,
+            BackColor = Color.Transparent,
             Location = new Point(20, 12),
-            Size = new Size(840, 36)
+            Size = new Size(860, 38),
+            Anchor = AnchorStyles.Top | AnchorStyles.Left | AnchorStyles.Right
         };
         Controls.Add(titleLabel);
 
@@ -61,17 +92,22 @@ public class DeckEvaluatorForm : Form
         {
             Text = "Commander:",
             Font = new Font("Segoe UI", 10, FontStyle.Bold),
-            ForeColor = Color.FromArgb(55, 65, 81),
+            ForeColor = Color.FromArgb(196, 181, 253),
+            BackColor = Color.Transparent,
             Location = new Point(20, 58),
-            Size = new Size(110, 24)
+            Size = new Size(110, 24),
+            Anchor = AnchorStyles.Top | AnchorStyles.Left
         };
         Controls.Add(commanderLabel);
 
         commanderTextBox = new TextBox
         {
             Font = new Font("Segoe UI", 10),
+            BackColor = Color.FromArgb(10, 7, 25),
+            ForeColor = Color.FromArgb(221, 214, 254),
             Location = new Point(130, 56),
-            Size = new Size(730, 26)
+            Size = new Size(730, 26),
+            Anchor = AnchorStyles.Top | AnchorStyles.Left | AnchorStyles.Right
         };
         Controls.Add(commanderTextBox);
 
@@ -79,18 +115,23 @@ public class DeckEvaluatorForm : Form
         {
             Text = "Moxfield URL:",
             Font = new Font("Segoe UI", 10, FontStyle.Bold),
-            ForeColor = Color.FromArgb(55, 65, 81),
+            ForeColor = Color.FromArgb(196, 181, 253),
+            BackColor = Color.Transparent,
             Location = new Point(20, 92),
-            Size = new Size(110, 24)
+            Size = new Size(110, 24),
+            Anchor = AnchorStyles.Top | AnchorStyles.Left
         };
         Controls.Add(moxfieldLabel);
 
         moxfieldLinkTextBox = new TextBox
         {
             Font = new Font("Segoe UI", 10),
+            BackColor = Color.FromArgb(10, 7, 25),
+            ForeColor = Color.FromArgb(221, 214, 254),
             Location = new Point(130, 90),
             Size = new Size(570, 26),
-            PlaceholderText = "https://www.moxfield.com/decks/..."
+            PlaceholderText = "https://www.moxfield.com/decks/...",
+            Anchor = AnchorStyles.Top | AnchorStyles.Left | AnchorStyles.Right
         };
         Controls.Add(moxfieldLinkTextBox);
 
@@ -102,7 +143,8 @@ public class DeckEvaluatorForm : Form
             ForeColor = Color.White,
             FlatStyle = FlatStyle.Flat,
             Location = new Point(710, 88),
-            Size = new Size(150, 30)
+            Size = new Size(150, 30),
+            Anchor = AnchorStyles.Top | AnchorStyles.Right
         };
         importMoxfieldButton.FlatAppearance.BorderSize = 0;
         importMoxfieldButton.Click += ImportMoxfieldButton_Click;
@@ -112,9 +154,11 @@ public class DeckEvaluatorForm : Form
         {
             Text = "Deck List (99 cards):",
             Font = new Font("Segoe UI", 10, FontStyle.Bold),
-            ForeColor = Color.FromArgb(55, 65, 81),
+            ForeColor = Color.FromArgb(196, 181, 253),
+            BackColor = Color.Transparent,
             Location = new Point(20, 126),
-            Size = new Size(150, 24)
+            Size = new Size(150, 24),
+            Anchor = AnchorStyles.Top | AnchorStyles.Left
         };
         Controls.Add(deckLabel);
 
@@ -122,9 +166,11 @@ public class DeckEvaluatorForm : Form
         {
             Text = "Cards Entered: 0",
             Font = new Font("Segoe UI", 9, FontStyle.Regular),
-            ForeColor = Color.FromArgb(75, 85, 99),
+            ForeColor = Color.FromArgb(148, 163, 184),
+            BackColor = Color.Transparent,
             Location = new Point(180, 128),
-            Size = new Size(260, 20)
+            Size = new Size(260, 20),
+            Anchor = AnchorStyles.Top | AnchorStyles.Left
         };
         Controls.Add(deckCountLabel);
 
@@ -133,22 +179,26 @@ public class DeckEvaluatorForm : Form
             Multiline = true,
             ScrollBars = ScrollBars.Vertical,
             Font = new Font("Cascadia Mono", 10),
+            BackColor = Color.FromArgb(10, 7, 25),
+            ForeColor = Color.FromArgb(221, 214, 254),
             Location = new Point(20, 152),
-            Size = new Size(840, 260),
-            BorderStyle = BorderStyle.FixedSingle
+            Size = new Size(412, 402),
+            BorderStyle = BorderStyle.FixedSingle,
+            Anchor = AnchorStyles.Top | AnchorStyles.Left | AnchorStyles.Bottom
         };
         deckInputTextBox.TextChanged += (_, _) => UpdateDeckCountLabel();
         Controls.Add(deckInputTextBox);
 
         evaluateButton = new Button
         {
-            Text = "Evaluate Deck",
+            Text = "Ask Dennis",
             Font = new Font("Segoe UI", 10, FontStyle.Bold),
-            BackColor = Color.FromArgb(16, 185, 129),
+            BackColor = Color.FromArgb(109, 40, 217),
             ForeColor = Color.White,
             FlatStyle = FlatStyle.Flat,
-            Location = new Point(20, 422),
-            Size = new Size(150, 36)
+            Location = new Point(20, 562),
+            Size = new Size(110, 36),
+            Anchor = AnchorStyles.Bottom | AnchorStyles.Left
         };
         evaluateButton.FlatAppearance.BorderSize = 0;
         evaluateButton.Click += EvaluateButton_Click;
@@ -161,8 +211,9 @@ public class DeckEvaluatorForm : Form
             BackColor = Color.FromArgb(239, 68, 68),
             ForeColor = Color.White,
             FlatStyle = FlatStyle.Flat,
-            Location = new Point(180, 422),
-            Size = new Size(110, 36)
+            Location = new Point(135, 562),
+            Size = new Size(85, 36),
+            Anchor = AnchorStyles.Bottom | AnchorStyles.Left
         };
         quitButton.FlatAppearance.BorderSize = 0;
         quitButton.Click += (_, _) => Close();
@@ -172,34 +223,13 @@ public class DeckEvaluatorForm : Form
         {
             Text = "On the draw",
             Font = new Font("Segoe UI", 9),
-            ForeColor = Color.FromArgb(55, 65, 81),
-            Location = new Point(300, 428),
-            Size = new Size(120, 24)
+            ForeColor = Color.FromArgb(196, 181, 253),
+            BackColor = Color.Transparent,
+            Location = new Point(228, 568),
+            Size = new Size(110, 24),
+            Anchor = AnchorStyles.Bottom | AnchorStyles.Left
         };
         Controls.Add(onDrawCheckBox);
-
-        var archetypeLabel = new Label
-        {
-            Text = "Archetype Model:",
-            Font = new Font("Segoe UI", 9, FontStyle.Bold),
-            ForeColor = Color.FromArgb(55, 65, 81),
-            Location = new Point(550, 428),
-            Size = new Size(115, 24)
-        };
-        Controls.Add(archetypeLabel);
-
-        archetypeComboBox = new ComboBox
-        {
-            DropDownStyle = ComboBoxStyle.DropDownList,
-            Font = new Font("Segoe UI", 9),
-            Location = new Point(670, 424),
-            Size = new Size(190, 26)
-        };
-        archetypeComboBox.Items.Add("Auto Detect");
-        foreach (DeckArchetype archetype in Enum.GetValues(typeof(DeckArchetype)))
-            archetypeComboBox.Items.Add(archetype);
-        archetypeComboBox.SelectedIndex = 0;
-        Controls.Add(archetypeComboBox);
 
         saveReportButton = new Button
         {
@@ -208,8 +238,9 @@ public class DeckEvaluatorForm : Form
             BackColor = Color.FromArgb(107, 114, 128),
             ForeColor = Color.White,
             FlatStyle = FlatStyle.Flat,
-            Location = new Point(430, 422),
-            Size = new Size(110, 36)
+            Location = new Point(345, 562),
+            Size = new Size(95, 36),
+            Anchor = AnchorStyles.Bottom | AnchorStyles.Left
         };
         saveReportButton.FlatAppearance.BorderSize = 0;
         saveReportButton.Click += SaveReportButton_Click;
@@ -217,24 +248,96 @@ public class DeckEvaluatorForm : Form
 
         trainButton = new Button
         {
-            Text = "Train Bot",
+            Text = "Train Dennis",
             Font = new Font("Segoe UI", 9, FontStyle.Bold),
             BackColor = Color.FromArgb(14, 116, 144),
             ForeColor = Color.White,
             FlatStyle = FlatStyle.Flat,
-            Location = new Point(780, 488),
-            Size = new Size(80, 24)
+            Location = new Point(560, 562),
+            Size = new Size(105, 36),
+            Anchor = AnchorStyles.Bottom | AnchorStyles.Left
         };
         trainButton.FlatAppearance.BorderSize = 0;
         trainButton.Click += TrainButton_Click;
         Controls.Add(trainButton);
 
+        var archetypeLabel = new Label
+        {
+            Text = "Archetype:",
+            Font = new Font("Segoe UI", 9, FontStyle.Bold),
+            ForeColor = Color.FromArgb(196, 181, 253),
+            BackColor = Color.Transparent,
+            Location = new Point(445, 568),
+            Size = new Size(75, 24),
+            Anchor = AnchorStyles.Bottom | AnchorStyles.Left
+        };
+        Controls.Add(archetypeLabel);
+
+        archetypeComboBox = new ComboBox
+        {
+            DropDownStyle = ComboBoxStyle.DropDownList,
+            Font = new Font("Segoe UI", 9),
+            BackColor = Color.FromArgb(30, 20, 60),
+            ForeColor = Color.FromArgb(221, 214, 254),
+            Location = new Point(524, 564),
+            Size = new Size(130, 26),
+            Anchor = AnchorStyles.Bottom | AnchorStyles.Left
+        };
+        archetypeComboBox.Items.Add("Auto Detect");
+        foreach (DeckArchetype archetype in Enum.GetValues(typeof(DeckArchetype)))
+            archetypeComboBox.Items.Add(archetype);
+        archetypeComboBox.SelectedIndex = 0;
+        Controls.Add(archetypeComboBox);
+
+        var gamesLabel = new Label
+        {
+            Text = "Games:",
+            Font = new Font("Segoe UI", 9, FontStyle.Bold),
+            ForeColor = Color.FromArgb(196, 181, 253),
+            BackColor = Color.Transparent,
+            Location = new Point(670, 568),
+            Size = new Size(50, 24),
+            Anchor = AnchorStyles.Bottom | AnchorStyles.Left
+        };
+        Controls.Add(gamesLabel);
+
+        gamesComboBox = new ComboBox
+        {
+            DropDownStyle = ComboBoxStyle.DropDownList,
+            Font = new Font("Segoe UI", 9),
+            BackColor = Color.FromArgb(30, 20, 60),
+            ForeColor = Color.FromArgb(221, 214, 254),
+            Location = new Point(725, 564),
+            Size = new Size(70, 26),
+            Anchor = AnchorStyles.Bottom | AnchorStyles.Left
+        };
+        gamesComboBox.Items.Add("10k");
+        gamesComboBox.Items.Add("50k");
+        gamesComboBox.Items.Add("100k");
+        gamesComboBox.Items.Add("200k");
+        gamesComboBox.Items.Add("500k");
+        gamesComboBox.SelectedIndex = 2; // Default to 100k
+        Controls.Add(gamesComboBox);
+
+        cedhCheckBox = new CheckBox
+        {
+            Text = "\u2694 cEDH",
+            Font = new Font("Segoe UI", 8, FontStyle.Bold),
+            ForeColor = Color.FromArgb(250, 204, 21),
+            BackColor = Color.Transparent,
+            Location = new Point(802, 568),
+            Size = new Size(65, 24),
+            Anchor = AnchorStyles.Bottom | AnchorStyles.Right
+        };
+        Controls.Add(cedhCheckBox);
+
         progressBar = new ProgressBar
         {
-            Location = new Point(20, 468),
+            Location = new Point(20, 606),
             Size = new Size(840, 18),
             Minimum = 0,
-            Maximum = 1000
+            Maximum = 1000,
+            Anchor = AnchorStyles.Bottom | AnchorStyles.Left | AnchorStyles.Right
         };
         Controls.Add(progressBar);
 
@@ -242,19 +345,23 @@ public class DeckEvaluatorForm : Form
         {
             Text = string.Empty,
             Font = new Font("Segoe UI", 9),
-            ForeColor = Color.FromArgb(75, 85, 99),
-            Location = new Point(20, 490),
-            Size = new Size(760, 20)
+            ForeColor = Color.FromArgb(148, 163, 184),
+            BackColor = Color.Transparent,
+            Location = new Point(20, 628),
+            Size = new Size(740, 20),
+            Anchor = AnchorStyles.Bottom | AnchorStyles.Left
         };
         Controls.Add(progressLabel);
 
         var resultsLabel = new Label
         {
-            Text = "Results:",
+            Text = "Dennis's Report:",
             Font = new Font("Segoe UI", 10, FontStyle.Bold),
-            ForeColor = Color.FromArgb(55, 65, 81),
-            Location = new Point(20, 514),
-            Size = new Size(100, 24)
+            ForeColor = Color.FromArgb(250, 204, 21),
+            BackColor = Color.Transparent,
+            Location = new Point(450, 126),
+            Size = new Size(160, 24),
+            Anchor = AnchorStyles.Top | AnchorStyles.Left
         };
         Controls.Add(resultsLabel);
 
@@ -262,15 +369,48 @@ public class DeckEvaluatorForm : Form
         {
             ReadOnly = true,
             Font = new Font("Segoe UI", 10),
-            BackColor = Color.White,
+            BackColor = Color.FromArgb(8, 5, 20),
+            ForeColor = Color.FromArgb(220, 214, 254),
             BorderStyle = BorderStyle.FixedSingle,
-            Location = new Point(20, 540),
-            Size = new Size(840, 150)
+            Location = new Point(450, 152),
+            Size = new Size(430, 402),
+            Anchor = AnchorStyles.Top | AnchorStyles.Left | AnchorStyles.Right | AnchorStyles.Bottom
         };
         Controls.Add(resultsTextBox);
 
         UpdateDeckCountLabel();
         LoadCardDatabase();
+    }
+
+    private static string ResolveCardDatabaseFilePath()
+    {
+        string basePath = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "cards.csv");
+        var candidates = new List<string>
+        {
+            basePath,
+            Path.Combine(Directory.GetCurrentDirectory(), "cards.csv")
+        };
+
+        string current = AppDomain.CurrentDomain.BaseDirectory;
+        for (int depth = 0; depth < 8; depth++)
+        {
+            var parent = Directory.GetParent(current);
+            if (parent == null)
+                break;
+
+            candidates.Add(Path.Combine(parent.FullName, "cards.csv"));
+            candidates.Add(Path.Combine(parent.FullName, "final", "FinalProject", "cards.csv"));
+            current = parent.FullName;
+        }
+
+        var existing = candidates
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .Where(File.Exists)
+            .Select(path => new FileInfo(path))
+            .OrderByDescending(info => info.LastWriteTimeUtc)
+            .ToList();
+
+        return existing.FirstOrDefault()?.FullName ?? basePath;
     }
 
     private string[] ParseCsvRow(string line)
@@ -562,7 +702,7 @@ public class DeckEvaluatorForm : Form
         }
 
         deckCountLabel.Text = $"Cards Entered: {total}";
-        deckCountLabel.ForeColor = total == 99 ? Color.FromArgb(22, 163, 74) : Color.FromArgb(75, 85, 99);
+        deckCountLabel.ForeColor = total == 99 ? Color.FromArgb(74, 222, 128) : Color.FromArgb(148, 163, 184);
     }
 
     private static string? ExtractCommanderFromDeck(JsonElement root)
@@ -684,20 +824,20 @@ public class DeckEvaluatorForm : Form
 
             resultsTextBox.Clear();
             resultsTextBox.SelectionFont = new Font("Segoe UI", 13, FontStyle.Bold);
-            resultsTextBox.SelectionColor = Color.FromArgb(17, 24, 39);
+            resultsTextBox.SelectionColor = Color.FromArgb(255, 255, 255);
             resultsTextBox.AppendText("Moxfield Import\n");
 
             void Header(string text)
             {
                 resultsTextBox.SelectionFont = new Font("Segoe UI", 10, FontStyle.Bold);
-                resultsTextBox.SelectionColor = Color.FromArgb(30, 64, 175);
+                resultsTextBox.SelectionColor = Color.FromArgb(250, 204, 21);
                 resultsTextBox.AppendText(text + "\n");
             }
 
             void Body(string text)
             {
                 resultsTextBox.SelectionFont = new Font("Segoe UI", 10, FontStyle.Regular);
-                resultsTextBox.SelectionColor = Color.FromArgb(31, 41, 55);
+                resultsTextBox.SelectionColor = Color.FromArgb(220, 214, 254);
                 resultsTextBox.AppendText(text + "\n");
             }
 
@@ -875,6 +1015,8 @@ public class DeckEvaluatorForm : Form
 
     private void LoadCardDatabase()
     {
+        const string ExpectedHeader = "Name,ManaCost,Colors,Type,Category,CardType,IsLand,OracleText";
+
         if (!File.Exists(cardDatabaseFilePath))
         {
             File.WriteAllText(cardDatabaseFilePath,
@@ -893,14 +1035,40 @@ public class DeckEvaluatorForm : Form
 
         try
         {
-            foreach (var row in File.ReadAllLines(cardDatabaseFilePath).Skip(1))
+            var lines = File.ReadAllLines(cardDatabaseFilePath);
+            if (lines.Length == 0)
+            {
+                MessageBox.Show("cards.csv exists but is empty. A fallback starter database will be written.", "Deck Evaluator", MessageBoxButtons.OK, MessageBoxIcon.Warning);
+                File.WriteAllText(cardDatabaseFilePath, ExpectedHeader + "\n");
+                lines = File.ReadAllLines(cardDatabaseFilePath);
+            }
+
+            string header = lines[0].Trim();
+            if (!header.Equals(ExpectedHeader, StringComparison.Ordinal))
+            {
+                MessageBox.Show(
+                    "cards.csv header does not match expected schema. Parsing will continue, but some fields may load incorrectly.\n\n"
+                    + $"Expected: {ExpectedHeader}\n"
+                    + $"Found:    {header}",
+                    "Deck Evaluator",
+                    MessageBoxButtons.OK,
+                    MessageBoxIcon.Warning);
+            }
+
+            int malformedRows = 0;
+            int nonLandRows = 0;
+            int roleTaggedRows = 0;
+            foreach (var row in lines.Skip(1))
             {
                 if (string.IsNullOrWhiteSpace(row))
                     continue;
 
                 var fields = ParseCsvRow(row);
                 if (fields.Length < 5)
+                {
+                    malformedRows++;
                     continue;
+                }
 
                 string name = fields[0].Trim();
                 if (name.Length == 0)
@@ -932,7 +1100,7 @@ public class DeckEvaluatorForm : Form
                         oracleText = fields[6].Trim().Trim('"');
                 }
 
-                if (!isLand && type.IndexOf("land", StringComparison.OrdinalIgnoreCase) >= 0)
+                if (IsLandByTypeLine(type))
                     isLand = true;
 
                 var record = new CardDbRecord
@@ -946,6 +1114,40 @@ public class DeckEvaluatorForm : Form
                     OracleText = oracleText
                 };
                 IndexCardRecord(record, name);
+
+                if (!isLand)
+                {
+                    nonLandRows++;
+                    bool hasRoleTag = category
+                        .Split(new[] { ',', ';' }, StringSplitOptions.RemoveEmptyEntries)
+                        .Select(tag => tag.Trim())
+                        .Any(tag => RoleTags.Contains(tag));
+                    if (hasRoleTag)
+                        roleTaggedRows++;
+                }
+            }
+
+            if (malformedRows > 0)
+            {
+                MessageBox.Show(
+                    $"Loaded cards.csv with {malformedRows} malformed row(s) skipped. Consider regenerating the database.",
+                    "Deck Evaluator",
+                    MessageBoxButtons.OK,
+                    MessageBoxIcon.Warning);
+            }
+
+            if (nonLandRows > 0)
+            {
+                double tagCoverage = roleTaggedRows * 100.0 / nonLandRows;
+                if (tagCoverage < 15)
+                {
+                    MessageBox.Show(
+                        $"cards.csv loaded, but only {tagCoverage:F1}% of non-land cards have role tags (Removal, Card Draw, Ramp, etc.). "
+                        + "Consider regenerating cards.csv so evaluator recommendations can use role tags reliably.",
+                        "Deck Evaluator",
+                        MessageBoxButtons.OK,
+                        MessageBoxIcon.Information);
+                }
             }
         }
         catch (Exception ex)
@@ -1009,6 +1211,42 @@ public class DeckEvaluatorForm : Form
             return 0;
 
         return Math.Max(0, (int)Math.Floor(rawManaValue + 1e-9));
+    }
+
+    private static bool IsLandByTypeLine(string? typeLine)
+    {
+        if (string.IsNullOrWhiteSpace(typeLine))
+            return false;
+
+        string normalized = typeLine.Replace("â€”", "—");
+        var faces = normalized.Split(new[] { "//" }, StringSplitOptions.RemoveEmptyEntries);
+        bool sawLandFace = false;
+        bool sawNonLandFace = false;
+
+        foreach (var face in faces)
+        {
+            string front = face;
+            int dashIndex = front.IndexOf('—');
+            if (dashIndex >= 0)
+                front = front.Substring(0, dashIndex);
+
+            var tokens = front
+                .Split(new[] { ' ' }, StringSplitOptions.RemoveEmptyEntries)
+                .Select(token => token.Trim())
+                .ToList();
+            if (!tokens.Any())
+                continue;
+
+            bool hasLand = tokens.Contains("Land", StringComparer.OrdinalIgnoreCase);
+            bool hasNonLandCore = tokens.Any(token => NonLandCoreTypes.Contains(token));
+
+            if (hasLand)
+                sawLandFace = true;
+            if (hasNonLandCore)
+                sawNonLandFace = true;
+        }
+
+        return sawLandFace && !sawNonLandFace;
     }
 
     private static string CsvEscape(string value)
@@ -1165,7 +1403,7 @@ public class DeckEvaluatorForm : Form
             }
         }
 
-        bool isLand = typeLine.IndexOf("Land", StringComparison.OrdinalIgnoreCase) >= 0;
+        bool isLand = IsLandByTypeLine(typeLine);
         return new CardDbRecord
         {
             Name = cardName,
@@ -1193,7 +1431,7 @@ public class DeckEvaluatorForm : Form
             if (card.Type.IndexOf("Battle", StringComparison.OrdinalIgnoreCase) >= 0) tags.Add("Battle");
             if (card.Type.IndexOf("Instant", StringComparison.OrdinalIgnoreCase) >= 0) tags.Add("Instant");
             if (card.Type.IndexOf("Sorcery", StringComparison.OrdinalIgnoreCase) >= 0) tags.Add("Sorcery");
-            if (card.Type.IndexOf("Land", StringComparison.OrdinalIgnoreCase) >= 0) tags.Add("Land");
+            if (IsLandByTypeLine(card.Type)) tags.Add("Land");
 
             if (card.Type.IndexOf("Creature", StringComparison.OrdinalIgnoreCase) >= 0)
             {
@@ -1278,6 +1516,7 @@ public class DeckEvaluatorForm : Form
         try
         {
             SetActionButtonsEnabled(false);
+            StartWizardAnimation();
             var rawInputLines = deckInputTextBox.Text.Split(new[] { '\r', '\n' }, StringSplitOptions.RemoveEmptyEntries);
             var prefetchNames = rawInputLines
                 .Select(line => TryParseDeckEntry(line, out string parsedName, out _) ? parsedName : string.Empty)
@@ -1296,13 +1535,20 @@ public class DeckEvaluatorForm : Form
                 return;
             }
 
-            int numSimulations = 100000;
+            int numSimulations = gamesComboBox.SelectedItem switch
+            {
+                "10k" => 10000,
+                "50k" => 50000,
+                "200k" => 200000,
+                "500k" => 500000,
+                _ => 100000, // Default to 100k
+            };
             int maxTurns = 10;
             progressBar.Value = 0;
-            progressLabel.Text = "Running simulations...";
+            progressLabel.Text = "Dennis is running simulations...";
 
             bool onDraw = onDrawCheckBox.Checked;
-            var evaluator = new DeckEvaluator(deck, GetSelectedArchetypeOverride());
+            var evaluator = new DeckEvaluator(deck, GetSelectedArchetypeOverride(), cedhCheckBox.Checked);
             var results = await Task.Run(() => evaluator.RunSimulations(numSimulations, maxTurns, onDraw, progress =>
             {
                 Invoke((Action)(() =>
@@ -1320,11 +1566,12 @@ public class DeckEvaluatorForm : Form
         catch (Exception ex)
         {
             resultsTextBox.Clear();
-            resultsTextBox.SelectionColor = Color.Red;
+            resultsTextBox.SelectionColor = Color.FromArgb(248, 113, 113);
             resultsTextBox.AppendText($"Error: {ex.Message}");
         }
         finally
         {
+            StopWizardAnimation();
             SetActionButtonsEnabled(true);
         }
     }
@@ -1338,10 +1585,11 @@ public class DeckEvaluatorForm : Form
         try
         {
             SetActionButtonsEnabled(false);
+            StartWizardAnimation();
             progressBar.Minimum = 0;
             progressBar.Maximum = batches;
             progressBar.Value = 0;
-            progressLabel.Text = $"Training goldfish bot ({batches} batches x {simulationsPerBatch:N0} sims)...";
+            progressLabel.Text = $"Dennis is training! ({batches} batches × {simulationsPerBatch:N0} sims)";
 
             bool onDraw = onDrawCheckBox.Checked;
             EvaluationResults results = await RunHeadlessTrainingAsync(
@@ -1368,25 +1616,146 @@ public class DeckEvaluatorForm : Form
                             progressBar.Value = batchIndex;
                         }
                     }));
-                });
+                },
+                cedhCheckBox.Checked);
 
             Deck deck = await ParseDeck(deckInputTextBox.Text, commanderTextBox.Text);
             RenderResults(deck, results, simulationsPerBatch, maxTurns, onDraw);
-            progressLabel.Text = $"Training complete. Learned games: {results.LearningGamesSeen}";
+            progressLabel.Text = $"Dennis finished training! Learned games: {results.LearningGamesSeen}";
         }
         catch (Exception ex)
         {
             resultsTextBox.Clear();
-            resultsTextBox.SelectionColor = Color.Red;
+            resultsTextBox.SelectionColor = Color.FromArgb(248, 113, 113);
             resultsTextBox.AppendText($"Training error: {ex.Message}");
             progressLabel.Text = "Training failed.";
         }
         finally
         {
+            StopWizardAnimation();
             progressBar.Maximum = 1000;
             progressBar.Value = 0;
             SetActionButtonsEnabled(true);
         }
+    }
+
+    private static readonly string[] WizardFrames =
+    {
+        "  \u2554\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2557\n" +
+        "  \u2551  \u2726   Dennis is Thinking...   \u2726  \u2551\n" +
+        "  \u255a\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u255d\n\n" +
+        "            \u00b7            \n" +
+        "           /|\\           \n" +
+        "          (o\u00b7o)   \u00b7      \n" +
+        "           \\|/           \n" +
+        "            |    \u00b7       \n" +
+        "           / \\           \n\n" +
+        "  Consulting the arcane database...\n  (Don't worry, it's not cursed!)",
+
+        "  \u2554\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2557\n" +
+        "  \u2551  \u2726   Dennis is Thinking...   \u2726  \u2551\n" +
+        "  \u255a\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u255d\n\n" +
+        "            \u00b7 \u2726          \n" +
+        "           /|\\  \u2726        \n" +
+        "          (o\u00b7o)    \u2726     \n" +
+        "           \\|/ \u2726         \n" +
+        "          \u2726 |            \n" +
+        "           / \\           \n\n" +
+        "  Wand-checking... (not a typo, definitely a wand!)",
+
+        "  \u2554\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2557\n" +
+        "  \u2551  \u2726   Dennis is Thinking...   \u2726  \u2551\n" +
+        "  \u255a\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u255d\n\n" +
+        "         \u2726  \u00b7  \u2726         \n" +
+        "          \u2726/|\\\u2726          \n" +
+        "          (\u00b0\u00b7\u00b0)  \u2726       \n" +
+        "         \u2726 \\|/ \u2726         \n" +
+        "           \u2726|\u2726            \n" +
+        "           / \\           \n\n" +
+        "  Counting goldfishes... (they're *fin*-tastically important!)",
+
+        "  \u2554\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2557\n" +
+        "  \u2551  \u2726   Dennis is Thinking...   \u2726  \u2551\n" +
+        "  \u255a\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u255d\n\n" +
+        "       \u2605 \u2726  \u00b7  \u2726 \u2605       \n" +
+        "        \u2605 /|\\ \u2726           \n" +
+        "         (\u00b0\u00b7\u00b0) \u2605\u2726         \n" +
+        "        \u2726 \\\u2605/ \u2726           \n" +
+        "          \u2605|\u2726             \n" +
+        "           / \\           \n\n" +
+        "  Evaluating synergies... (let the magic flow!)",
+
+        "  \u2554\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2557\n" +
+        "  \u2551  \u2726   Dennis is Thinking...   \u2726  \u2551\n" +
+        "  \u255a\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u255d\n\n" +
+        "          \u2726  \u00b7  \u2726        \n" +
+        "          \u2726/|\\\u2726          \n" +
+        "          (o\u00b7o)  \u2726       \n" +
+        "           \\|/ \u2726         \n" +
+        "           \u2726|             \n" +
+        "           / \\           \n\n" +
+        "  Analyzing the mana curve... (it's not curvy, it's *magical*!)",
+
+        "  \u2554\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2557\n" +
+        "  \u2551  \u2726   Dennis is Thinking...   \u2726  \u2551\n" +
+        "  \u255a\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u255d\n\n" +
+        "            \u00b7 \u2726          \n" +
+        "           /|\\           \n" +
+        "          (o\u00b7o)    \u00b7     \n" +
+        "           \\|/  \u00b7        \n" +
+        "            |            \n" +
+        "           / \\           \n\n" +
+        "  Checking the power level...",
+
+        "  \u2554\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2557\n" +
+        "  \u2551  \u2726   Dennis is Thinking...   \u2726  \u2551\n" +
+        "  \u255a\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u255d\n\n" +
+        "         \u2726  *  \u2726         \n" +
+        "          \u2726/|\\           \n" +
+        "          (o\u00b7o) \u2726        \n" +
+        "         \u2726 \\|/  \u2726        \n" +
+        "            | \u2726           \n" +
+        "           / \\           \n\n" +
+        "  Checking power level... (is it *spellbinding* enough?)",
+
+        "  \u2554\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2557\n" +
+        "  \u2551  \u2726   Dennis is Thinking...   \u2726  \u2551\n" +
+        "  \u255a\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u255d\n\n" +
+        "            \u00b7            \n" +
+        "           /|\\  \u00b7        \n" +
+        "          (o\u00b7o)          \n" +
+        "           \\|/    \u00b7      \n" +
+        "            |            \n" +
+        "           / \\           \n\n" +
+        "  Incanting final spell... (don't cough at the circle!)",
+    };
+
+    private void StartWizardAnimation()
+    {
+        _wizardFrame = 0;
+        _wizardTimer = new System.Windows.Forms.Timer { Interval = 1200 };
+        _wizardTimer.Tick += WizardTimer_Tick;
+        WizardTimer_Tick(null, EventArgs.Empty);
+        _wizardTimer.Start();
+    }
+
+    private void StopWizardAnimation()
+    {
+        if (_wizardTimer != null)
+        {
+            _wizardTimer.Stop();
+            _wizardTimer.Dispose();
+            _wizardTimer = null;
+        }
+    }
+
+    private void WizardTimer_Tick(object? sender, EventArgs e)
+    {
+        resultsTextBox.Clear();
+        resultsTextBox.SelectionFont = new Font("Cascadia Mono", 10, FontStyle.Regular);
+        resultsTextBox.SelectionColor = Color.FromArgb(180, 150, 255);
+        resultsTextBox.AppendText(WizardFrames[_wizardFrame % WizardFrames.Length]);
+        _wizardFrame++;
     }
 
     private void SetActionButtonsEnabled(bool enabled)
@@ -1404,31 +1773,31 @@ public class DeckEvaluatorForm : Form
         void Header(string text)
         {
             resultsTextBox.SelectionFont = new Font("Segoe UI", 10, FontStyle.Bold);
-            resultsTextBox.SelectionColor = Color.FromArgb(30, 64, 175);
+            resultsTextBox.SelectionColor = Color.FromArgb(250, 204, 21);
             resultsTextBox.AppendText(text + "\n");
         }
 
         void Body(string text)
         {
             resultsTextBox.SelectionFont = new Font("Segoe UI", 10, FontStyle.Regular);
-            resultsTextBox.SelectionColor = Color.FromArgb(31, 41, 55);
+            resultsTextBox.SelectionColor = Color.FromArgb(220, 214, 254);
             resultsTextBox.AppendText(text + "\n");
         }
 
         resultsTextBox.SelectionFont = new Font("Segoe UI", 13, FontStyle.Bold);
-        resultsTextBox.SelectionColor = Color.FromArgb(17, 24, 39);
-        resultsTextBox.AppendText("Deck Evaluation Report\n");
+        resultsTextBox.SelectionColor = Color.FromArgb(255, 255, 255);
+        resultsTextBox.AppendText(results.IsCedh ? "Dennis's cEDH Analysis Report\n" : "Dennis's Analysis Report\n");
         Body($"{numSimulations:N0} simulations across {maxTurns} turns");
         Body(new string('-', 72));
 
         if (missingCardNames.Any())
         {
             resultsTextBox.SelectionFont = new Font("Segoe UI", 9, FontStyle.Italic);
-            resultsTextBox.SelectionColor = Color.FromArgb(180, 83, 9);
+            resultsTextBox.SelectionColor = Color.FromArgb(251, 191, 36);
             resultsTextBox.AppendText($"⚠ {missingCardNames.Count} card(s) not in local DB — resolved via Scryfall or defaults: {string.Join(", ", missingCardNames.Take(6))}{(missingCardNames.Count > 6 ? "…" : string.Empty)}\n");
         }
 
-        Body($"Simulation: AI Goldfish Bot — mulligans, tutor targets, draw sequencing, reactive spell restraint, turn-sequence planning | On the draw: {(onDraw ? "Yes" : "No")}");
+        Body($"Simulation: Dennis ✦ mulligans, tutor targets, draw sequencing, reactive spell restraint, turn-sequence planning | On the draw: {(onDraw ? "Yes" : "No")}");
         Body($"Archetype model: {results.SelectedArchetype}");
         if (results.DetectedArchetype != results.SelectedArchetype)
             Body($"Auto-detected archetype: {results.DetectedArchetype}");
@@ -1477,11 +1846,11 @@ public class DeckEvaluatorForm : Form
                     : (label == "CMC3" || label == "CMC4") ? Color.FromArgb(37, 99, 235) : Color.FromArgb(220, 38, 38);
 
                 resultsTextBox.SelectionFont = new Font("Cascadia Mono", 9, FontStyle.Regular);
-                resultsTextBox.SelectionColor = Color.FromArgb(55, 65, 81);
+                resultsTextBox.SelectionColor = Color.FromArgb(196, 181, 253);
                 resultsTextBox.AppendText($"  {label,-5} [{count,3}] ");
                 resultsTextBox.SelectionColor = barColor;
                 resultsTextBox.AppendText(filled);
-                resultsTextBox.SelectionColor = Color.FromArgb(180, 180, 180);
+                resultsTextBox.SelectionColor = Color.FromArgb(60, 50, 90);
                 resultsTextBox.AppendText(empty + "\n");
             }
 
@@ -1562,16 +1931,42 @@ public class DeckEvaluatorForm : Form
 
         if (addSection.Any())
         {
-            Header("Suggested Adds");
+            Header("Recommended Additions");
             foreach (var recommendation in addSection)
                 Body($"- {recommendation}");
         }
 
         if (cutSection.Any())
         {
-            Header("Suggested Cuts");
+            Header("Cutting Recommendations");
             foreach (var recommendation in cutSection)
                 Body($"- {recommendation}");
+        }
+
+        // Extract cards to cut and cards to add for "Recommended Replacements" section
+        var replacementPairs = new List<(string cut, string add)>();
+        foreach (var cut in suggestedCuts.Take(3))
+        {
+            var matchingAdd = suggestedAdds.FirstOrDefault(add => 
+                (add.Contains("cards:", StringComparison.OrdinalIgnoreCase) || add.Contains("examples:", StringComparison.OrdinalIgnoreCase)) &&
+                !replacementPairs.Any(p => p.add == add));
+            if (!string.IsNullOrWhiteSpace(matchingAdd))
+                replacementPairs.Add((cut, matchingAdd));
+        }
+
+        if (replacementPairs.Any())
+        {
+            Header("Recommended Replacements");
+            foreach (var (cut, add) in replacementPairs)
+            {
+                resultsTextBox.SelectionFont = new Font("Segoe UI", 10, FontStyle.Regular);
+                resultsTextBox.SelectionColor = Color.FromArgb(248, 113, 113);
+                resultsTextBox.AppendText($"✗ Cut: {cut}\n");
+                resultsTextBox.SelectionColor = Color.FromArgb(74, 222, 128);
+                resultsTextBox.AppendText($"✓ Add: {add}\n");
+                resultsTextBox.SelectionColor = Color.FromArgb(220, 214, 254);
+                resultsTextBox.AppendText("\n");
+            }
         }
 
         var namedRecommendations = actionable.Where(text => text.Contains("cards:", StringComparison.OrdinalIgnoreCase) || text.Contains("candidates:", StringComparison.OrdinalIgnoreCase) || text.Contains("examples:", StringComparison.OrdinalIgnoreCase)).Take(4).ToList();
@@ -1619,10 +2014,10 @@ public class DeckEvaluatorForm : Form
     private void AppendEdhrecSection(List<string> suggestions)
     {
         resultsTextBox.SelectionFont = new Font("Segoe UI", 10, FontStyle.Bold);
-        resultsTextBox.SelectionColor = Color.FromArgb(30, 64, 175);
+        resultsTextBox.SelectionColor = Color.FromArgb(250, 204, 21);
         resultsTextBox.AppendText("EDHREC Suggestions\n");
         resultsTextBox.SelectionFont = new Font("Segoe UI", 10, FontStyle.Regular);
-        resultsTextBox.SelectionColor = Color.FromArgb(31, 41, 55);
+        resultsTextBox.SelectionColor = Color.FromArgb(220, 214, 254);
         foreach (var suggestion in suggestions)
             resultsTextBox.AppendText($"- {suggestion}\n");
     }
@@ -1732,7 +2127,7 @@ public class DeckEvaluatorForm : Form
                 colors = commanderData.Value.colors;
                 type = commanderData.Value.type;
                 oracleText = commanderData.Value.oracleText;
-                isLand = FindCardRecord(commanderName)?.IsLand ?? type.IndexOf("land", StringComparison.OrdinalIgnoreCase) >= 0;
+                isLand = FindCardRecord(commanderName)?.IsLand ?? IsLandByTypeLine(type);
             }
 
             var commanderCard = new Card
@@ -1770,13 +2165,13 @@ public class DeckEvaluatorForm : Form
                 type = cardEntry.Value.type;
                 category = cardEntry.Value.category;
                 oracleText = cardEntry.Value.oracleText;
-                isLand = FindCardRecord(cardName)?.IsLand ?? type.IndexOf("land", StringComparison.OrdinalIgnoreCase) >= 0;
+                isLand = FindCardRecord(cardName)?.IsLand ?? IsLandByTypeLine(type);
             }
             else
             {
                 manaCost = 3;
                 category = "Unknown";
-                isLand = cardName.IndexOf("land", StringComparison.OrdinalIgnoreCase) >= 0;
+                isLand = false;
             }
 
             for (int copy = 0; copy < quantity; copy++)
@@ -1802,13 +2197,13 @@ public class DeckEvaluatorForm : Form
     private Task<(int cost, List<string> colors, string type, string category, string oracleText)?> GetCardData(string name)
     {
         if (string.IsNullOrWhiteSpace(name))
-            return Task.FromResult<(int, List<string>, string, string, string)?>((0, new List<string>(), string.Empty, "Unknown", string.Empty));
+            return Task.FromResult<(int, List<string>, string, string, string)?>(null);
 
         var record = FindCardRecord(name);
         if (record != null)
             return Task.FromResult<(int, List<string>, string, string, string)?>((record.ManaCost, record.Colors, record.Type, record.Category, record.OracleText));
 
-        return Task.FromResult<(int, List<string>, string, string, string)?>((0, new List<string>(), "Unknown", "Unknown", string.Empty));
+        return Task.FromResult<(int, List<string>, string, string, string)?>(null);
     }
 
     public async Task<EvaluationResults> RunHeadlessTrainingAsync(
@@ -1818,7 +2213,8 @@ public class DeckEvaluatorForm : Form
         int maxTurns,
         int batches,
         bool onDraw,
-        Action<string>? log = null)
+        Action<string>? log = null,
+        bool isCedh = false)
     {
         if (string.IsNullOrWhiteSpace(deckText))
             throw new InvalidOperationException("Deck text is required for training.");
@@ -1847,7 +2243,7 @@ public class DeckEvaluatorForm : Form
         EvaluationResults? latest = null;
         for (int batch = 1; batch <= batches; batch++)
         {
-            var evaluator = new DeckEvaluator(deck, GetSelectedArchetypeOverride());
+            var evaluator = new DeckEvaluator(deck, GetSelectedArchetypeOverride(), isCedh);
             latest = await Task.Run(() => evaluator.RunSimulations(simulationsPerBatch, maxTurns, onDraw));
 
             log?.Invoke(
