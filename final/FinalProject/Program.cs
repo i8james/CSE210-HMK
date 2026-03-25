@@ -276,6 +276,45 @@ public class DeckEvaluatorForm : Form
             .ToDictionary(g => g.Key, g => g.Count());
     }
 
+    private void ApplyOracleTextCategoryTags(Card card)
+    {
+        if (card == null || card.IsLand) return;
+
+        var tags = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+
+        if (!string.IsNullOrWhiteSpace(card.Type))
+        {
+            if (card.Type.IndexOf("Creature", StringComparison.OrdinalIgnoreCase) >= 0) tags.Add("Creature");
+            if (card.Type.IndexOf("Enchantment", StringComparison.OrdinalIgnoreCase) >= 0) tags.Add("Enchantment");
+            if (card.Type.IndexOf("Artifact", StringComparison.OrdinalIgnoreCase) >= 0) tags.Add("Artifact");
+            if (card.Type.IndexOf("Planeswalker", StringComparison.OrdinalIgnoreCase) >= 0) tags.Add("Planeswalker");
+            if (card.Type.IndexOf("Battle", StringComparison.OrdinalIgnoreCase) >= 0) tags.Add("Battle");
+            if (card.Type.IndexOf("Instant", StringComparison.OrdinalIgnoreCase) >= 0) tags.Add("Instant");
+            if (card.Type.IndexOf("Sorcery", StringComparison.OrdinalIgnoreCase) >= 0) tags.Add("Sorcery");
+            if (card.Type.IndexOf("Land", StringComparison.OrdinalIgnoreCase) >= 0) tags.Add("Land");
+        }
+
+        string oracle = card.OracleText ?? string.Empty;
+        if (!string.IsNullOrWhiteSpace(oracle))
+        {
+            string oracleLower = oracle.ToLowerInvariant();
+            if (oracleLower.Contains("creature")) tags.Add("Creature");
+            if (oracleLower.Contains("enchantment")) tags.Add("Enchantment");
+            if (oracleLower.Contains("artifact")) tags.Add("Artifact");
+            if (oracleLower.Contains("planeswalker")) tags.Add("Planeswalker");
+            if (oracleLower.Contains("battle")) tags.Add("Battle");
+            if (oracleLower.Contains("instant")) tags.Add("Instant");
+            if (oracleLower.Contains("sorcery")) tags.Add("Sorcery");
+        }
+
+        if (tags.Count == 0) return;
+
+        var current = card.Category ?? "";
+        var currentTags = current.Split(new[] { ',', ';' }, StringSplitOptions.RemoveEmptyEntries).Select(s => s.Trim()).Where(s => s.Length > 0).ToHashSet(StringComparer.OrdinalIgnoreCase);
+        currentTags.UnionWith(tags);
+        card.Category = string.Join(", ", currentTags);
+    }
+
     private async void EvaluateButton_Click(object sender, EventArgs e)
     {
         try
@@ -301,8 +340,11 @@ public class DeckEvaluatorForm : Form
             {
                 this.Invoke((Action)(() =>
                 {
-                    progressBar.Value = progress;
-                    progressLabel.Text = $"Simulating game {progress}/{numSimulations}";
+                    // Scale progress into progress bar range (e.g., 0-1000) to prevent invalid values
+                    int scaled = (int)Math.Round(progress * (double)progressBar.Maximum / numSimulations);
+                    scaled = Math.Max(progressBar.Minimum, Math.Min(progressBar.Maximum, scaled));
+                    progressBar.Value = scaled;
+                    progressLabel.Text = $"Simulating game {progress}/{numSimulations} ({scaled}/{progressBar.Maximum})";
                 }));
             }));
 
@@ -478,7 +520,9 @@ public class DeckEvaluatorForm : Form
                     isLand = type.IndexOf("land", StringComparison.OrdinalIgnoreCase) >= 0;
                 }
             }
-            deck.AddCard(new Card { Name = commanderName, IsLand = isLand, ManaCost = manaCost, Colors = colors, Type = type, Category = category, OracleText = oracleText });
+            var commanderCard = new Card { Name = commanderName, IsLand = isLand, ManaCost = manaCost, Colors = colors, Type = type, Category = category, OracleText = oracleText };
+            ApplyOracleTextCategoryTags(commanderCard);
+            deck.AddCard(commanderCard);
         }
 
         // Add deck cards
@@ -522,7 +566,9 @@ public class DeckEvaluatorForm : Form
 
             for (int j = 0; j < quantity; j++)
             {
-                deck.AddCard(new Card { Name = cardName, IsLand = isLand, ManaCost = manaCost, Colors = colors, Type = type, Category = category, OracleText = oracleText });
+                var card = new Card { Name = cardName, IsLand = isLand, ManaCost = manaCost, Colors = colors, Type = type, Category = category, OracleText = oracleText };
+                ApplyOracleTextCategoryTags(card);
+                deck.AddCard(card);
             }
         }
 
@@ -733,11 +779,24 @@ public class DeckEvaluator
     {
         var results = new List<SimulationResult>();
 
+        int progressReportInterval = Math.Max(1, numSimulations / 1000);
+        int lastReported = -1;
+
         for (int i = 0; i < numSimulations; i++)
         {
             var simResult = RunSingleSimulation(maxTurns);
             results.Add(simResult);
-            progressCallback?.Invoke(i + 1);
+
+            if (progressCallback != null)
+            {
+                int reportValue = i + 1;
+                int scaled = (int)Math.Round(reportValue * 1000.0 / numSimulations);
+                if (scaled != lastReported || i == numSimulations - 1)
+                {
+                    progressCallback(reportValue);
+                    lastReported = scaled;
+                }
+            }
         }
 
         var evalResults = new EvaluationResults
@@ -858,9 +917,10 @@ public class DeckEvaluator
         double midPct = (midCost * 100.0 / nonLandCount);
         double highPct = (highCost * 100.0 / nonLandCount);
         
-        results.Recommendations.Add($"Early (0-2): {lowCost} cards ({lowPct:F1}%) - {'░░░░░░░░░░'.Substring(0, (int)(lowPct/10))}");
-        results.Recommendations.Add($"Mid (3-4):   {midCost} cards ({midPct:F1}%) - {'░░░░░░░░░░'.Substring(0, (int)(midPct/10))}");
-        results.Recommendations.Add($"Late (5+):   {highCost} cards ({highPct:F1}%) - {'░░░░░░░░░░'.Substring(0, (int)(highPct/10))}");
+        var barString = "░░░░░░░░░░";
+        results.Recommendations.Add($"Early (0-2): {lowCost} cards ({lowPct:F1}%) - {barString.Substring(0, Math.Min(barString.Length, (int)(lowPct / 10)))}");
+        results.Recommendations.Add($"Mid (3-4):   {midCost} cards ({midPct:F1}%) - {barString.Substring(0, Math.Min(barString.Length, (int)(midPct / 10)))}");
+        results.Recommendations.Add($"Late (5+):   {highCost} cards ({highPct:F1}%) - {barString.Substring(0, Math.Min(barString.Length, (int)(highPct / 10)))}");
 
         if (highCost > lowCost * 1.5)
         {
@@ -875,11 +935,23 @@ public class DeckEvaluator
             results.Recommendations.Add($"✓ Mana curve is well-balanced");
         }
 
-        // Creature Analysis (using Type field for accuracy)
+        // Creature Analysis
         results.Recommendations.Add("\n=== CREATURE & SPELL BREAKDOWN ===");
-        int creatureCount = deck.cards.Count(c => !c.IsLand && c.Type != null && c.Type.IndexOf("Creature", StringComparison.OrdinalIgnoreCase) >= 0);
-        int instantCount = deck.cards.Count(c => !c.IsLand && c.Type != null && c.Type.IndexOf("Instant", StringComparison.OrdinalIgnoreCase) >= 0);
-        int sorceryCount = deck.cards.Count(c => !c.IsLand && c.Type != null && c.Type.IndexOf("Sorcery", StringComparison.OrdinalIgnoreCase) >= 0);
+        int creatureCount = deck.cards.Count(c => !c.IsLand && (
+            (c.Type != null && c.Type.IndexOf("Creature", StringComparison.OrdinalIgnoreCase) >= 0) ||
+            (c.Category != null && c.Category.IndexOf("Creature", StringComparison.OrdinalIgnoreCase) >= 0) ||
+            (!string.IsNullOrWhiteSpace(c.OracleText) && c.OracleText.IndexOf("creature", StringComparison.OrdinalIgnoreCase) >= 0)
+        ));
+        int instantCount = deck.cards.Count(c => !c.IsLand && (
+            (c.Type != null && c.Type.IndexOf("Instant", StringComparison.OrdinalIgnoreCase) >= 0) ||
+            (c.Category != null && c.Category.IndexOf("Instant", StringComparison.OrdinalIgnoreCase) >= 0) ||
+            (!string.IsNullOrWhiteSpace(c.OracleText) && c.OracleText.IndexOf("instant", StringComparison.OrdinalIgnoreCase) >= 0)
+        ));
+        int sorceryCount = deck.cards.Count(c => !c.IsLand && (
+            (c.Type != null && c.Type.IndexOf("Sorcery", StringComparison.OrdinalIgnoreCase) >= 0) ||
+            (c.Category != null && c.Category.IndexOf("Sorcery", StringComparison.OrdinalIgnoreCase) >= 0) ||
+            (!string.IsNullOrWhiteSpace(c.OracleText) && c.OracleText.IndexOf("sorcery", StringComparison.OrdinalIgnoreCase) >= 0)
+        ));
         int artifactCount = deck.cards.Count(c => !c.IsLand && c.Type != null && c.Type.IndexOf("Artifact", StringComparison.OrdinalIgnoreCase) >= 0);
         int enchantmentCount = deck.cards.Count(c => !c.IsLand && c.Type != null && c.Type.IndexOf("Enchantment", StringComparison.OrdinalIgnoreCase) >= 0);
         int planeswalkerCount = deck.cards.Count(c => !c.IsLand && c.Type != null && c.Type.IndexOf("Planeswalker", StringComparison.OrdinalIgnoreCase) >= 0);
