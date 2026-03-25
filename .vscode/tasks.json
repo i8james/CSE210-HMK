@@ -192,6 +192,8 @@
             "args": [
                 "build",
                 "${workspaceFolder}/final/FinalProject/FinalProject.csproj",
+                "/property:UseAppHost=false",
+                "/property:OutDir=${workspaceFolder}/final/FinalProject/bin_locksafe/",
                 "/property:GenerateFullPaths=true",
                 "/consoleloggerparameters:NoSummary"
             ],

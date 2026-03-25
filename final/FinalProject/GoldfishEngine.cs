@@ -8,10 +8,29 @@ internal sealed class GoldfishBot
 {
     private readonly Deck _deck;
     private readonly Random _random = new Random();
+    private readonly GoldfishLearningProfile _learningProfile;
 
-    public GoldfishBot(Deck deck)
+    private sealed class TurnPlanResult
+    {
+        public int Score { get; set; }
+        public List<GoldfishAction> Sequence { get; } = new List<GoldfishAction>();
+    }
+
+    private readonly DeckArchetype _archetype;
+    private readonly string _primaryTribe;
+    public int LearnedGames => _learningProfile.GamesPlayed;
+
+    public GoldfishBot(Deck deck, DeckArchetype archetype)
     {
         _deck = deck;
+        _archetype = archetype;
+        _primaryTribe = DeckAnalysis.TryGetPrimaryTribe(deck, out string tribe, out _, out _) ? tribe : string.Empty;
+        _learningProfile = GoldfishLearningStore.LoadProfile(deck);
+    }
+
+    public void SaveLearning()
+    {
+        GoldfishLearningStore.SaveProfile(_learningProfile);
     }
 
     public SimulationResult SimulateGame(int maxTurns, bool onDraw = false)
@@ -20,18 +39,21 @@ internal sealed class GoldfishBot
         var library = _deck.GetShuffledDeck(_random);
         var hand = BuildOpeningHand(ref library, out mulligansTaken);
 
-        int landsInPlay = 0;
         int landsPlayed = 0;
         int missedLands = 0;
         int spellsCast = 0;
         int idleTurns = 0;
-        int permanentRamp = 0;
         int peakMana = 0;
         int manaProduced = 0;
         int manaSpent = 0;
         int earlyTurnActions = 0;
+        int commanderCastTurn = 0;
         int openingHandLands = hand.Count(card => card.IsLand);
         var battlefield = new List<Card>();
+        var cardsCastThisGame = new List<Card>();
+        int landsInPlay = 0;
+        int permanentRamp = 0;
+        bool commanderAvailable = _deck.Commander != null;
 
         for (int turn = 1; turn <= maxTurns; turn++)
         {
@@ -39,39 +61,47 @@ internal sealed class GoldfishBot
                 DrawCards(library, hand, 1);
 
             bool playedAnything = false;
-            PlayBestLand(hand, ref landsInPlay, ref landsPlayed, ref missedLands, ref playedAnything);
-
-            int manaAvailable = landsInPlay + permanentRamp;
-            int manaAtStartOfTurn = manaAvailable;
-            peakMana = Math.Max(peakMana, manaAvailable);
+            bool commanderWasAvailable = commanderAvailable;
+            var state = new GoldfishGameState(library, hand, battlefield, _deck.Commander, commanderAvailable, turn, landsInPlay, permanentRamp);
+            int manaAtStartOfTurn = state.ManaAvailable;
+            peakMana = Math.Max(peakMana, state.ManaAvailable);
             manaProduced += manaAtStartOfTurn;
 
             while (true)
             {
-                var bestSpell = ChooseBestSpellToCast(hand, battlefield, turn, manaAvailable);
-                if (bestSpell == null)
+                var bestAction = ChooseBestAction(state);
+                if (bestAction == null || bestAction.Type == GoldfishActionType.PassPhase)
                     break;
 
-                int spellCost = Math.Max(0, bestSpell.ManaCost);
-                hand.Remove(bestSpell);
-                manaAvailable -= spellCost;
-                manaSpent += spellCost;
-                spellsCast++;
                 playedAnything = true;
-                if (turn <= 3)
+                if (turn <= 3 && bestAction.Type != GoldfishActionType.PlayLand)
                     earlyTurnActions++;
-
-                if (DeckAnalysis.IsPermanent(bestSpell))
-                    battlefield.Add(bestSpell);
-
-                ApplyCastEffects(bestSpell, library, hand, battlefield, turn, ref permanentRamp, ref manaAvailable);
+                if ((bestAction.Type == GoldfishActionType.CastSpell || bestAction.Type == GoldfishActionType.CastCommander) && bestAction.Card != null)
+                    cardsCastThisGame.Add(bestAction.Card);
+                ExecuteAction(state, bestAction);
             }
+
+            if (!state.LandPlayedThisTurn)
+                missedLands++;
+
+            landsPlayed += state.LandPlayedThisTurn ? 1 : 0;
+            landsInPlay = state.LandsInPlay;
+            permanentRamp = state.PermanentRamp;
+            hand = state.Hand;
+            battlefield = state.Battlefield;
+            library = state.Library;
+            manaSpent += state.ManaSpent;
+            spellsCast += state.SpellsCast;
+            commanderAvailable = state.CommanderAvailable;
+
+            if (commanderWasAvailable && !commanderAvailable && commanderCastTurn == 0)
+                commanderCastTurn = turn;
 
             if (!playedAnything)
                 idleTurns++;
         }
 
-        return new SimulationResult
+        var result = new SimulationResult
         {
             MissedLands = missedLands,
             LandsPlayed = landsPlayed,
@@ -86,8 +116,13 @@ internal sealed class GoldfishBot
             ManaProduced = manaProduced,
             ManaSpent = manaSpent,
             EarlyTurnActions = earlyTurnActions,
-            StrandedHighCostCards = hand.Count(card => !card.IsLand && card.ManaCost >= 5)
+            StrandedHighCostCards = hand.Count(card => !card.IsLand && card.ManaCost >= 5),
+            CommanderCastTurn = commanderCastTurn,
+            CommanderCast = commanderCastTurn > 0
         };
+
+        LearnFromSimulation(result, cardsCastThisGame);
+        return result;
     }
 
     private List<Card> BuildOpeningHand(ref List<Card> library, out int mulligansTaken)
@@ -171,38 +206,171 @@ internal sealed class GoldfishBot
         }
     }
 
-    private static void PlayBestLand(List<Card> hand, ref int landsInPlay, ref int landsPlayed, ref int missedLands, ref bool playedAnything)
+    private GoldfishAction? ChooseBestAction(GoldfishGameState state)
     {
-        var landInHand = hand.FirstOrDefault(card => card.IsLand);
-        if (landInHand == null)
-        {
-            missedLands++;
-            return;
-        }
-
-        hand.Remove(landInHand);
-        landsInPlay++;
-        landsPlayed++;
-        playedAnything = true;
-    }
-
-    private static Card? ChooseBestSpellToCast(List<Card> hand, List<Card> battlefield, int turn, int manaAvailable)
-    {
-        var playable = hand
-            .Where(card => !card.IsLand && card.ManaCost <= manaAvailable)
-            .Select(card => new { Card = card, Score = ScoreCardForPriority(card, battlefield, hand, turn, manaAvailable) })
-            .OrderByDescending(item => item.Score)
-            .ThenBy(item => item.Card.ManaCost)
-            .ThenBy(item => item.Card.Name)
-            .ToList();
-
-        if (!playable.Any())
+        var bestPlan = BuildBestTurnPlan(state, 0, GetPlanningDepth(state));
+        if (!bestPlan.Sequence.Any())
             return null;
 
-        return playable[0].Score < 0 ? null : playable[0].Card;
+        return bestPlan.Sequence[0];
     }
 
-    private static int ScoreCardForPriority(Card card, IReadOnlyCollection<Card> battlefield, IReadOnlyCollection<Card> hand, int turn, int manaAvailable)
+    private static int GetPlanningDepth(GoldfishGameState state)
+    {
+        int playableCount = GoldfishLegalActionGenerator.GetLegalActions(state).Count(action => action.Type != GoldfishActionType.PassPhase);
+        if (state.CommanderAvailable && state.Commander != null)
+            playableCount++;
+        if (state.Turn <= 3 && playableCount <= 7)
+            return 3;
+        if (state.Turn <= 5 && playableCount <= 9)
+            return 2;
+        return 1;
+    }
+
+    private TurnPlanResult BuildBestTurnPlan(GoldfishGameState state, int depth, int maxDepth)
+    {
+        int baselineScore = EvaluatePlanningState(state);
+        var best = new TurnPlanResult { Score = baselineScore };
+
+        var legalActions = GoldfishLegalActionGenerator.GetLegalActions(state)
+            .Select(action => new
+            {
+                Action = action,
+                Priority = ScoreActionForPriority(action, state)
+            })
+            .OrderByDescending(item => item.Priority)
+            .ThenBy(item => item.Action.ManaCost)
+            .ThenBy(item => item.Action.Card?.Name)
+            .Take(depth == 0 ? 6 : 4)
+            .ToList();
+
+        foreach (var candidate in legalActions)
+        {
+            if (candidate.Action.Type == GoldfishActionType.PassPhase)
+                continue;
+            if (candidate.Priority < 0)
+                continue;
+
+            var nextState = state.Clone();
+            ExecuteAction(nextState, candidate.Action);
+            int candidateScore = candidate.Priority + EvaluatePlanningState(nextState);
+
+            TurnPlanResult futurePlan;
+            if (depth + 1 < maxDepth && GoldfishLegalActionGenerator.GetLegalActions(nextState).Any(action => action.Type != GoldfishActionType.PassPhase))
+                futurePlan = BuildBestTurnPlan(nextState, depth + 1, maxDepth);
+            else
+                futurePlan = new TurnPlanResult { Score = EvaluatePlanningState(nextState) };
+
+            int totalScore = candidateScore + futurePlan.Score;
+            if (totalScore <= best.Score)
+                continue;
+
+            best = new TurnPlanResult { Score = totalScore };
+            best.Sequence.Add(candidate.Action);
+            best.Sequence.AddRange(futurePlan.Sequence);
+        }
+
+        return best;
+    }
+
+    private int EvaluatePlanningState(GoldfishGameState state)
+    {
+        int battlefieldRamp = state.Battlefield.Count(card => DeckAnalysis.GetCategoryTags(card).Contains("Ramp"));
+        int battlefieldDraw = state.Battlefield.Count(card => DeckAnalysis.GetCategoryTags(card).Contains("Card Draw"));
+        int cheapFollowUps = state.Hand.Count(card => !card.IsLand && card.ManaCost <= Math.Max(2, state.Turn + 1));
+        int strandedExpensiveCards = state.Hand.Count(card => !card.IsLand && card.ManaCost >= state.Turn + 4);
+        int comboPieces = state.Hand.Concat(state.Battlefield).Count(card => CanAdvanceCombo(card, state.Hand, state.Battlefield));
+        bool commanderOnBoard = state.Battlefield.Any(card => card.IsCommander);
+        int commanderValue = commanderOnBoard ? ScoreCommanderPresence(state.Commander) : 0;
+
+        return state.ManaSpent * 10
+            + state.SpellsCast * 18
+            + state.CardsDrawn * 12
+            + battlefieldRamp * 20
+            + battlefieldDraw * 16
+            + cheapFollowUps * 4
+            + comboPieces * 10
+            + commanderValue
+            - state.ManaAvailable * 8
+            - strandedExpensiveCards * 7;
+    }
+
+    private int ScoreActionForPriority(GoldfishAction action, GoldfishGameState state)
+    {
+        return action.Type switch
+        {
+            GoldfishActionType.PlayLand => state.LandPlayedThisTurn ? -100 : (state.Turn <= 4 ? 220 : 160),
+            GoldfishActionType.CastCommander => ScoreCommanderCast(state),
+            GoldfishActionType.CastSpell when action.Card != null => ScoreCardForPriority(action.Card, state.Battlefield, state.Hand, state.Turn, state.ManaAvailable),
+            _ => -1
+        };
+    }
+
+    private int ScoreCommanderCast(GoldfishGameState state)
+    {
+        if (state.Commander == null)
+            return -1;
+
+        var commander = state.Commander;
+        var tags = DeckAnalysis.GetCategoryTags(commander);
+        int score = 75;
+
+        if (state.Turn <= 5)
+            score += 35;
+        if (tags.Contains("Ramp") || tags.Contains("Card Draw") || tags.Contains("Tutor") || tags.Contains("Token Generation"))
+            score += 45;
+        if (_archetype == DeckArchetype.Tribal && !string.IsNullOrWhiteSpace(_primaryTribe) && DeckAnalysis.HasTribe(commander, _primaryTribe))
+            score += 35;
+        if (_archetype == DeckArchetype.Spellslinger && (DeckAnalysis.HasType(commander, "Wizard") || tags.Contains("Card Draw")))
+            score += 18;
+        if (_archetype == DeckArchetype.Combo && tags.Contains("Tutor"))
+            score += 22;
+        if (state.ManaAvailable == commander.ManaCost + state.CommanderTax)
+            score += 12;
+        score += (int)Math.Round(_learningProfile.CommanderBias);
+
+        return score;
+    }
+
+    private int ScoreCommanderPresence(Card? commander)
+    {
+        if (commander == null)
+            return 0;
+
+        var tags = DeckAnalysis.GetCategoryTags(commander);
+        int score = 18;
+        if (tags.Contains("Ramp") || tags.Contains("Card Draw") || tags.Contains("Token Generation"))
+            score += 20;
+        if (_archetype == DeckArchetype.Tribal && !string.IsNullOrWhiteSpace(_primaryTribe) && DeckAnalysis.HasTribe(commander, _primaryTribe))
+            score += 15;
+        return score;
+    }
+
+    private static int EstimateImmediateRampGain(Card card, HashSet<string> tags, string oracle)
+    {
+        if (!DeckAnalysis.IsPermanent(card) || DeckAnalysis.HasType(card, "Creature"))
+            return 0;
+        if (!tags.Contains("Ramp"))
+            return 0;
+        if (oracle.Contains("{t}: add {"))
+            return 1;
+        if (card.ManaCost <= 1)
+            return 1;
+        return 0;
+    }
+
+    private static int EstimateTemporaryManaGain(string oracle)
+    {
+        if (oracle.Contains("add {c}{c}{c}"))
+            return 3;
+        if (oracle.Contains("add {c}{c}") || oracle.Contains("add {r}{r}") || oracle.Contains("add {g}{g}") || oracle.Contains("add {u}{u}") || oracle.Contains("add {w}{w}") || oracle.Contains("add {b}{b}"))
+            return 2;
+        if (oracle.Contains("add {"))
+            return 1;
+        return 0;
+    }
+
+    private int ScoreCardForPriority(Card card, IReadOnlyCollection<Card> battlefield, IReadOnlyCollection<Card> hand, int turn, int manaAvailable)
     {
         string oracle = card.OracleText ?? string.Empty;
         var tags = DeckAnalysis.GetCategoryTags(card);
@@ -270,7 +438,105 @@ internal sealed class GoldfishBot
         if (turn <= 2 && card.ManaCost >= 5)
             score -= 35;
 
+        score += ApplyArchetypeAdjustment(card, tags, battlefield);
+        score += GetLearningAdjustment(tags, card.IsCommander);
+
         return score;
+    }
+
+    private int GetLearningAdjustment(HashSet<string> tags, bool isCommander)
+    {
+        double score = isCommander ? _learningProfile.CommanderBias : 0;
+        foreach (var tag in tags)
+        {
+            if (_learningProfile.TagBiases.TryGetValue(tag, out double bias))
+                score += bias;
+        }
+
+        return (int)Math.Round(score);
+    }
+
+    private int ApplyArchetypeAdjustment(Card card, HashSet<string> tags, IReadOnlyCollection<Card> battlefield)
+    {
+        int score = 0;
+        switch (_archetype)
+        {
+            case DeckArchetype.Ramp:
+                if (tags.Contains("Ramp")) score += 20;
+                if (card.ManaCost >= 5) score += battlefield.Count(permanent => DeckAnalysis.GetCategoryTags(permanent).Contains("Ramp")) >= 2 ? 16 : 6;
+                break;
+            case DeckArchetype.Spellslinger:
+                if (DeckAnalysis.HasType(card, "Instant") || DeckAnalysis.HasType(card, "Sorcery")) score += 26;
+                if (tags.Contains("Card Draw") || tags.Contains("Tutor")) score += 12;
+                if (tags.Contains("Creature") && card.ManaCost >= 4) score -= 10;
+                break;
+            case DeckArchetype.Tribal:
+                if (!string.IsNullOrWhiteSpace(_primaryTribe) && DeckAnalysis.HasTribe(card, _primaryTribe)) score += 24;
+                if (tags.Contains("Creature")) score += 8;
+                break;
+            case DeckArchetype.Tokens:
+                if (tags.Contains("Token Generation")) score += 28;
+                if (tags.Contains("Creature") || tags.Contains("Enchantment")) score += 8;
+                break;
+            case DeckArchetype.Combo:
+                if (tags.Contains("Tutor")) score += 28;
+                if (CanAdvanceCombo(card, battlefield, battlefield)) score += 24;
+                if (tags.Contains("Creature") && card.ManaCost >= 5 && !tags.Contains("Tutor")) score -= 8;
+                break;
+        }
+
+        return score;
+    }
+
+    private void ExecuteAction(GoldfishGameState state, GoldfishAction action)
+    {
+        switch (action.Type)
+        {
+            case GoldfishActionType.PlayLand when action.Card != null:
+                state.Hand.Remove(action.Card);
+                state.Battlefield.Add(action.Card);
+                state.LandsInPlay++;
+                state.LandPlayedThisTurn = true;
+                state.ManaAvailable++;
+                break;
+
+            case GoldfishActionType.CastCommander when action.Card != null:
+                state.ManaAvailable -= action.ManaCost;
+                state.ManaSpent += action.ManaCost;
+                state.SpellsCast++;
+                state.CommanderAvailable = false;
+                state.Battlefield.Add(action.Card);
+                int commanderRamp = state.PermanentRamp;
+                int commanderMana = state.ManaAvailable;
+                ApplyCastEffects(action.Card, state.Library, state.Hand, state.Battlefield, state.Turn, ref commanderRamp, ref commanderMana);
+                state.PermanentRamp = commanderRamp;
+                state.ManaAvailable = commanderMana;
+                break;
+
+            case GoldfishActionType.CastSpell when action.Card != null:
+                state.Hand.Remove(action.Card);
+                state.ManaAvailable -= action.ManaCost;
+                state.ManaSpent += action.ManaCost;
+                state.SpellsCast++;
+                if (DeckAnalysis.IsPermanent(action.Card))
+                    state.Battlefield.Add(action.Card);
+                else
+                    state.Graveyard.Add(action.Card);
+
+                var tags = DeckAnalysis.GetCategoryTags(action.Card);
+                string oracle = (action.Card.OracleText ?? string.Empty).ToLowerInvariant();
+                if (tags.Contains("Ramp") && !action.Card.IsLand)
+                    state.ManaAvailable += EstimateImmediateRampGain(action.Card, tags, oracle);
+
+                int handCountBefore = state.Hand.Count;
+                int spellRamp = state.PermanentRamp;
+                int spellMana = state.ManaAvailable;
+                ApplyCastEffects(action.Card, state.Library, state.Hand, state.Battlefield, state.Turn, ref spellRamp, ref spellMana);
+                state.PermanentRamp = spellRamp;
+                state.ManaAvailable = spellMana;
+                state.CardsDrawn += Math.Max(0, state.Hand.Count - handCountBefore);
+                break;
+        }
     }
 
     private static bool IsReactiveOnly(Card card)
@@ -309,7 +575,46 @@ internal sealed class GoldfishBot
         return hand.Concat(battlefield).Any(other => !ReferenceEquals(other, card) && !string.IsNullOrWhiteSpace(other.OracleText));
     }
 
-    private static void ApplyCastEffects(Card card, List<Card> library, List<Card> hand, List<Card> battlefield, int turn, ref int permanentRamp, ref int manaAvailable)
+    private void LearnFromSimulation(SimulationResult result, IReadOnlyCollection<Card> cardsCastThisGame)
+    {
+        _learningProfile.GamesPlayed++;
+
+        double reward = 0;
+        reward += result.ManaProduced > 0 ? result.ManaSpent * 100.0 / result.ManaProduced : 0;
+        reward -= result.IdleTurns * 8;
+        reward -= result.MissedLands * 10;
+        reward -= result.StrandedHighCostCards * 6;
+        reward += result.EarlyTurnActions * 6;
+
+        if (result.CommanderCast)
+        {
+            reward += 18;
+            reward += Math.Max(0, 8 - result.CommanderCastTurn) * 2;
+            _learningProfile.CommanderBias = ClampBias(_learningProfile.CommanderBias + 0.18);
+        }
+        else if (_deck.Commander != null)
+        {
+            _learningProfile.CommanderBias = ClampBias(_learningProfile.CommanderBias - 0.08);
+        }
+
+        double normalizedReward = Math.Clamp((reward - 45) / 60.0, -1.0, 1.0);
+        foreach (var tag in cardsCastThisGame
+            .Where(card => !card.IsLand)
+            .SelectMany(card => DeckAnalysis.GetCategoryTags(card))
+            .GroupBy(tag => tag, StringComparer.OrdinalIgnoreCase))
+        {
+            double currentBias = _learningProfile.TagBiases.TryGetValue(tag.Key, out double existingBias) ? existingBias : 0;
+            double updatedBias = ClampBias(currentBias + normalizedReward * Math.Min(0.35, 0.1 + tag.Count() * 0.03));
+            _learningProfile.TagBiases[tag.Key] = updatedBias;
+        }
+    }
+
+    private static double ClampBias(double value)
+    {
+        return Math.Max(-20, Math.Min(20, value));
+    }
+
+    private void ApplyCastEffects(Card card, List<Card> library, List<Card> hand, List<Card> battlefield, int turn, ref int permanentRamp, ref int manaAvailable)
     {
         var tags = DeckAnalysis.GetCategoryTags(card);
         string oracle = (card.OracleText ?? string.Empty).ToLowerInvariant();
@@ -358,7 +663,7 @@ internal sealed class GoldfishBot
         return card.ManaCost <= 2 ? 1 : 2;
     }
 
-    private static Card? ChooseTutorTarget(List<Card> library, IReadOnlyCollection<Card> hand, IReadOnlyCollection<Card> battlefield, int turn)
+    private Card? ChooseTutorTarget(List<Card> library, IReadOnlyCollection<Card> hand, IReadOnlyCollection<Card> battlefield, int turn)
     {
         var libraryCards = library.Where(card => !card.IsLand).ToList();
         if (!libraryCards.Any())
@@ -389,15 +694,44 @@ internal sealed class GoldfishBot
 public class DeckEvaluator
 {
     private readonly Deck _deck;
+    private readonly DeckArchetype _selectedArchetype;
 
-    public DeckEvaluator(Deck deck)
+    private sealed class ArchetypeTargets
+    {
+        public int LandsMin { get; init; }
+        public int LandsMax { get; init; }
+        public int RampMin { get; init; }
+        public int RampMax { get; init; }
+        public int DrawMin { get; init; }
+        public int DrawMax { get; init; }
+        public int InteractionMin { get; init; }
+        public int InteractionMax { get; init; }
+        public int CreatureMin { get; init; }
+        public int CreatureMax { get; init; }
+        public int InstantSorceryMin { get; init; }
+        public int InstantSorceryMax { get; init; }
+        public int TutorMin { get; init; }
+        public int TutorMax { get; init; }
+        public string FocusSummary { get; init; } = string.Empty;
+    }
+
+    private sealed class PowerLevelAssessment
+    {
+        public double PowerLevel { get; init; }
+        public string Bracket { get; init; } = string.Empty;
+        public string Summary { get; init; } = string.Empty;
+        public List<string> Signals { get; init; } = new List<string>();
+    }
+
+    public DeckEvaluator(Deck deck, DeckArchetype? archetypeOverride = null)
     {
         _deck = deck;
+        _selectedArchetype = archetypeOverride ?? DeckAnalysis.DetectPrimaryArchetype(deck);
     }
 
     public EvaluationResults RunSimulations(int numSimulations, int maxTurns, bool onDraw = false, Action<int>? progressCallback = null)
     {
-        var bot = new GoldfishBot(_deck);
+        var bot = new GoldfishBot(_deck, _selectedArchetype);
         var results = new List<SimulationResult>(numSimulations);
         int lastReported = -1;
 
@@ -420,6 +754,8 @@ public class DeckEvaluator
 
         var evaluation = new EvaluationResults
         {
+            SelectedArchetype = _selectedArchetype,
+            DetectedArchetype = DeckAnalysis.DetectPrimaryArchetype(_deck),
             AverageMissedLands = results.Average(result => result.MissedLands),
             AverageLandsPlayed = results.Average(result => result.LandsPlayed),
             AverageCardsPlayable = results.Average(result => result.CardsPlayable),
@@ -434,15 +770,311 @@ public class DeckEvaluator
             AverageManaSpent = results.Average(result => result.ManaSpent),
             AverageManaEfficiency = results.Average(result => result.ManaProduced > 0 ? result.ManaSpent * 100.0 / result.ManaProduced : 0),
             AverageEarlyTurnActions = results.Average(result => result.EarlyTurnActions),
-            AverageStrandedHighCostCards = results.Average(result => result.StrandedHighCostCards)
+            AverageStrandedHighCostCards = results.Average(result => result.StrandedHighCostCards),
+            AverageCommanderCastTurn = results.Where(result => result.CommanderCast).Any() ? results.Where(result => result.CommanderCast).Average(result => result.CommanderCastTurn) : 0,
+            CommanderCastRate = results.Count(result => result.CommanderCast) * 100.0 / results.Count,
+            LearningGamesSeen = bot.LearnedGames
         };
 
+        var powerAssessment = AssessPowerLevel(evaluation, _deck);
+        evaluation.EstimatedPowerLevel = powerAssessment.PowerLevel;
+        evaluation.EstimatedBracket = powerAssessment.Bracket;
+        evaluation.PowerSummary = powerAssessment.Summary;
+        evaluation.PowerSignals = powerAssessment.Signals;
+
+        bot.SaveLearning();
         GenerateRecommendations(evaluation, _deck, maxTurns);
         return evaluation;
     }
 
+    private PowerLevelAssessment AssessPowerLevel(EvaluationResults results, Deck deck)
+    {
+        int rampCount = DeckAnalysis.CountRoleCards(deck, "Ramp");
+        int drawCount = DeckAnalysis.CountRoleCards(deck, "Card Draw");
+        int removalCount = DeckAnalysis.CountRoleCards(deck, "Removal");
+        int counterCount = DeckAnalysis.CountRoleCards(deck, "Counterspell");
+        int tutorCount = DeckAnalysis.CountRoleCards(deck, "Tutor");
+        int comboCount = DeckAnalysis.DetectComboPieces(deck).Sum(group => group.Cards.Count);
+        int instantSorceryCount = deck.Cards.Count(card => DeckAnalysis.IsNonLand(card) && (DeckAnalysis.HasType(card, "Instant") || DeckAnalysis.HasType(card, "Sorcery")));
+        int fastManaCount = deck.Cards.Count(card => !card.IsLand
+            && card.ManaCost <= 2
+            && DeckAnalysis.GetCategoryTags(card).Contains("Ramp"));
+
+        double score = 1.5;
+        var positiveSignals = new List<string>();
+        var limitingSignals = new List<string>();
+
+        if (comboCount >= 6)
+        {
+            score += 1.5;
+            positiveSignals.Add($"Dense combo package ({comboCount} combo-linked cards)");
+        }
+        else if (comboCount >= 3)
+        {
+            score += 0.8;
+            positiveSignals.Add($"Noticeable combo angle ({comboCount} combo-linked cards)");
+        }
+
+        if (tutorCount >= 5)
+        {
+            score += 1.3;
+            positiveSignals.Add($"High tutor density ({tutorCount}) increases consistency");
+        }
+        else if (tutorCount >= 2)
+        {
+            score += 0.6;
+            positiveSignals.Add($"Some tutor support ({tutorCount}) improves access to engines");
+        }
+
+        if (fastManaCount >= 6)
+        {
+            score += 1.2;
+            positiveSignals.Add($"Heavy cheap ramp / fast mana presence ({fastManaCount})");
+        }
+        else if (fastManaCount >= 3)
+        {
+            score += 0.6;
+            positiveSignals.Add($"Good early acceleration package ({fastManaCount} cheap ramp pieces)");
+        }
+
+        if (results.AverageManaEfficiency >= 75)
+        {
+            score += 1.1;
+            positiveSignals.Add($"High mana efficiency ({results.AverageManaEfficiency:F1}%)");
+        }
+        else if (results.AverageManaEfficiency >= 65)
+        {
+            score += 0.6;
+            positiveSignals.Add($"Solid mana efficiency ({results.AverageManaEfficiency:F1}%)");
+        }
+        else if (results.AverageManaEfficiency < 55)
+        {
+            score -= 0.6;
+            limitingSignals.Add($"Mana usage is inefficient ({results.AverageManaEfficiency:F1}%)");
+        }
+
+        if (results.AverageIdleTurns <= 0.8)
+        {
+            score += 0.8;
+            positiveSignals.Add($"Very few idle turns ({results.AverageIdleTurns:F2})");
+        }
+        else if (results.AverageIdleTurns >= 2.2)
+        {
+            score -= 0.8;
+            limitingSignals.Add($"Too many idle turns ({results.AverageIdleTurns:F2}) slow the deck down");
+        }
+
+        if (results.AverageEarlyTurnActions >= 2.5)
+        {
+            score += 0.8;
+            positiveSignals.Add($"Strong early development by turn 3 ({results.AverageEarlyTurnActions:F2} actions)");
+        }
+        else if (results.AverageEarlyTurnActions < 1.5)
+        {
+            score -= 0.6;
+            limitingSignals.Add($"Slow early setup ({results.AverageEarlyTurnActions:F2} actions by turn 3)");
+        }
+
+        if (drawCount >= 10)
+        {
+            score += 0.4;
+            positiveSignals.Add($"Reliable card flow ({drawCount} draw pieces)");
+        }
+        else if (drawCount < 7)
+        {
+            score -= 0.3;
+            limitingSignals.Add($"Card flow is light ({drawCount} draw pieces)");
+        }
+
+        if (removalCount + counterCount >= 15)
+        {
+            score += 0.5;
+            positiveSignals.Add($"High interaction density ({removalCount + counterCount})");
+        }
+        else if (removalCount + counterCount < 9)
+        {
+            score -= 0.3;
+            limitingSignals.Add($"Interaction is thin ({removalCount + counterCount})");
+        }
+
+        if (deck.Commander != null && results.CommanderCastRate >= 80)
+        {
+            score += 0.4;
+            positiveSignals.Add($"Commander shows up reliably ({results.CommanderCastRate:F1}% cast rate)");
+        }
+        else if (deck.Commander != null && results.CommanderCastRate < 50)
+        {
+            score -= 0.4;
+            limitingSignals.Add($"Commander is not entering play consistently ({results.CommanderCastRate:F1}% cast rate)");
+        }
+
+        if (_selectedArchetype == DeckArchetype.Combo && tutorCount + comboCount >= 8)
+            score += 0.5;
+        if (_selectedArchetype == DeckArchetype.Spellslinger && instantSorceryCount >= 24)
+            score += 0.4;
+        if (_selectedArchetype == DeckArchetype.Ramp && rampCount >= 12 && results.AveragePeakMana >= 7)
+            score += 0.5;
+
+        score = Math.Max(1.0, Math.Min(10.0, score));
+
+        string bracket;
+        string summary;
+        if (score >= 8.3)
+        {
+            bracket = "Bracket 4 - High Power";
+            summary = "Fast, consistent, and likely pushing toward high-power tables.";
+        }
+        else if (score >= 6.4)
+        {
+            bracket = "Bracket 3 - Optimized";
+            summary = "Well-tuned and efficient, with clear game plans and stronger consistency tools.";
+        }
+        else if (score >= 4.3)
+        {
+            bracket = "Bracket 2 - Focused";
+            summary = "Coherent and capable, but not yet operating at a highly optimized table speed.";
+        }
+        else
+        {
+            bracket = "Bracket 1 - Casual";
+            summary = "More relaxed and less explosive; likely best at lower-pressure tables.";
+        }
+
+        var signals = positiveSignals.Take(3)
+            .Concat(limitingSignals.Take(2))
+            .ToList();
+        if (!signals.Any())
+            signals.Add("No single signal dominated the review; this list reads as balanced but not extreme.");
+
+        return new PowerLevelAssessment
+        {
+            PowerLevel = score,
+            Bracket = bracket,
+            Summary = summary,
+            Signals = signals
+        };
+    }
+
+    private static ArchetypeTargets GetArchetypeTargets(DeckArchetype archetype)
+    {
+        return archetype switch
+        {
+            DeckArchetype.Ramp => new ArchetypeTargets
+            {
+                LandsMin = 36,
+                LandsMax = 39,
+                RampMin = 11,
+                RampMax = 16,
+                DrawMin = 8,
+                DrawMax = 13,
+                InteractionMin = 10,
+                InteractionMax = 18,
+                CreatureMin = 16,
+                CreatureMax = 28,
+                InstantSorceryMin = 6,
+                InstantSorceryMax = 16,
+                TutorMin = 1,
+                TutorMax = 5,
+                FocusSummary = "Hit land drops, accelerate mana, and convert that mana into impactful top-end threats."
+            },
+            DeckArchetype.Spellslinger => new ArchetypeTargets
+            {
+                LandsMin = 34,
+                LandsMax = 37,
+                RampMin = 8,
+                RampMax = 13,
+                DrawMin = 10,
+                DrawMax = 16,
+                InteractionMin = 14,
+                InteractionMax = 24,
+                CreatureMin = 6,
+                CreatureMax = 18,
+                InstantSorceryMin = 20,
+                InstantSorceryMax = 34,
+                TutorMin = 1,
+                TutorMax = 6,
+                FocusSummary = "Chain cheap spells, keep cards flowing, and maintain enough interaction to reach payoff turns."
+            },
+            DeckArchetype.Tribal => new ArchetypeTargets
+            {
+                LandsMin = 35,
+                LandsMax = 38,
+                RampMin = 8,
+                RampMax = 13,
+                DrawMin = 8,
+                DrawMax = 13,
+                InteractionMin = 10,
+                InteractionMax = 18,
+                CreatureMin = 24,
+                CreatureMax = 36,
+                InstantSorceryMin = 6,
+                InstantSorceryMax = 16,
+                TutorMin = 0,
+                TutorMax = 4,
+                FocusSummary = "Maximize tribe density while preserving enough ramp, draw, and interaction to actually deploy the board."
+            },
+            DeckArchetype.Tokens => new ArchetypeTargets
+            {
+                LandsMin = 35,
+                LandsMax = 38,
+                RampMin = 9,
+                RampMax = 14,
+                DrawMin = 8,
+                DrawMax = 14,
+                InteractionMin = 10,
+                InteractionMax = 18,
+                CreatureMin = 16,
+                CreatureMax = 28,
+                InstantSorceryMin = 8,
+                InstantSorceryMax = 18,
+                TutorMin = 0,
+                TutorMax = 4,
+                FocusSummary = "Produce bodies early, scale them with anthem or payoff effects, and avoid overloading on non-synergy cards."
+            },
+            DeckArchetype.Combo => new ArchetypeTargets
+            {
+                LandsMin = 33,
+                LandsMax = 37,
+                RampMin = 8,
+                RampMax = 13,
+                DrawMin = 10,
+                DrawMax = 16,
+                InteractionMin = 10,
+                InteractionMax = 18,
+                CreatureMin = 8,
+                CreatureMax = 22,
+                InstantSorceryMin = 12,
+                InstantSorceryMax = 24,
+                TutorMin = 3,
+                TutorMax = 8,
+                FocusSummary = "Find combo pieces consistently, protect the setup turn, and trim cards that do not advance or defend the combo."
+            },
+            _ => new ArchetypeTargets
+            {
+                LandsMin = 35,
+                LandsMax = 38,
+                RampMin = 8,
+                RampMax = 14,
+                DrawMin = 8,
+                DrawMax = 14,
+                InteractionMin = 12,
+                InteractionMax = 20,
+                CreatureMin = 16,
+                CreatureMax = 28,
+                InstantSorceryMin = 8,
+                InstantSorceryMax = 18,
+                TutorMin = 0,
+                TutorMax = 5,
+                FocusSummary = "Maintain a balanced curve with enough mana, interaction, and card flow to play strong midgame Magic."
+            }
+        };
+    }
+
     private void GenerateRecommendations(EvaluationResults results, Deck deck, int maxTurns)
     {
+        var archetype = results.SelectedArchetype;
+        var targets = GetArchetypeTargets(archetype);
+
         static string FormatNameList(IEnumerable<string> names)
         {
             var list = names.Where(name => !string.IsNullOrWhiteSpace(name)).Distinct(StringComparer.OrdinalIgnoreCase).Take(5).ToList();
@@ -486,12 +1118,20 @@ public class DeckEvaluator
         }
 
         results.Recommendations.Add("\n=== MANA & LAND ANALYSIS ===");
+        results.Recommendations.Add($"Deck archetype model: {archetype}");
+        if (results.DetectedArchetype != results.SelectedArchetype)
+            results.Recommendations.Add($"Auto-detected archetype: {results.DetectedArchetype} (recommendations are using the selected model instead).");
+        results.Recommendations.Add($"Plan focus: {targets.FocusSummary}");
         int landCount = deck.LandCount;
-        int nonLandCount = deck.Cards.Count - landCount;
+        int nonLandCount = deck.Cards.Count(card => !card.IsLand && !card.IsCommander);
         double landPercentage = landCount * 100.0 / deck.Cards.Count;
 
         if (results.AverageMissedLands > 2)
             results.Recommendations.Add($"🚨 HIGH PRIORITY: Avg {results.AverageMissedLands:F2} missed land drops. Add {Math.Ceiling(results.AverageMissedLands)} more lands (currently {landCount} / {landPercentage:F1}%)");
+        else if (landCount < targets.LandsMin)
+            results.Recommendations.Add($"⚠️  Land count is low for a {archetype} shell: {landCount} lands vs target {targets.LandsMin}-{targets.LandsMax}.");
+        else if (landCount > targets.LandsMax && results.AverageMissedLands < 0.5)
+            results.Recommendations.Add($"💡 Land count is high for a {archetype} shell: {landCount} lands vs target {targets.LandsMin}-{targets.LandsMax}. You can likely convert a few lands into action spells.");
         else if (results.AverageMissedLands < 0.2)
             results.Recommendations.Add($"💡 Excess lands: Avg {results.AverageMissedLands:F2} missed drops suggests {landCount - 2}-{landCount - 4} lands might work better");
         else
@@ -526,23 +1166,27 @@ public class DeckEvaluator
         int creatureCount = deck.Cards.Count(card => !card.IsLand && DeckAnalysis.HasType(card, "Creature"));
         int instantCount = deck.Cards.Count(card => !card.IsLand && DeckAnalysis.HasType(card, "Instant"));
         int sorceryCount = deck.Cards.Count(card => !card.IsLand && DeckAnalysis.HasType(card, "Sorcery"));
+        int instantSorceryCount = instantCount + sorceryCount;
         int artifactCount = deck.Cards.Count(card => !card.IsLand && DeckAnalysis.HasType(card, "Artifact"));
         int enchantmentCount = deck.Cards.Count(card => !card.IsLand && DeckAnalysis.HasType(card, "Enchantment"));
         int planeswalkerCount = deck.Cards.Count(card => !card.IsLand && DeckAnalysis.HasType(card, "Planeswalker"));
+        int tokenCount = deck.Cards.Count(card => !card.IsLand && DeckAnalysis.GetCategoryTags(card).Contains("Token Generation"));
+        int tutorCount = deck.Cards.Count(card => !card.IsLand && DeckAnalysis.GetCategoryTags(card).Contains("Tutor"));
+        bool hasPrimaryTribe = DeckAnalysis.TryGetPrimaryTribe(deck, out string primaryTribe, out int primaryTribeCount, out _);
 
-        if (creatureCount < 10)
-            results.Recommendations.Add($"⚠️  Creatures: {creatureCount} - Add {10 - creatureCount} for better board presence");
-        else if (creatureCount < 20)
-            results.Recommendations.Add($"✓ Creatures: {creatureCount} - Good foundation for board development");
-        else if (creatureCount <= 28)
-            results.Recommendations.Add($"✓ Creatures: {creatureCount} - Strong creature count");
+        if (creatureCount < targets.CreatureMin)
+            results.Recommendations.Add($"⚠️  Creatures: {creatureCount} - below the {archetype} target of {targets.CreatureMin}-{targets.CreatureMax}.");
+        else if (creatureCount <= targets.CreatureMax)
+            results.Recommendations.Add($"✓ Creatures: {creatureCount} - aligned with the {archetype} target band of {targets.CreatureMin}-{targets.CreatureMax}.");
         else
-            results.Recommendations.Add($"⚠️  Creatures: {creatureCount} - Consider focusing on instant/sorcery strategy");
+            results.Recommendations.Add($"⚠️  Creatures: {creatureCount} - above the {archetype} target of {targets.CreatureMin}-{targets.CreatureMax}; some slots may be better used on support pieces.");
 
-        if (instantCount + sorceryCount >= 12)
-            results.Recommendations.Add($"✓ Instants/Sorceries: {instantCount + sorceryCount} - Good spell base for interaction (examples: {FormatNameList(GetTopNamesByType("Instant").Concat(GetTopNamesByType("Sorcery")))})");
+        if (instantSorceryCount < targets.InstantSorceryMin)
+            results.Recommendations.Add($"⚠️  Instants/Sorceries: {instantSorceryCount} - low for a {archetype} plan (target {targets.InstantSorceryMin}-{targets.InstantSorceryMax}). Current examples: {FormatNameList(GetTopNamesByType("Instant").Concat(GetTopNamesByType("Sorcery")))}");
+        else if (instantSorceryCount <= targets.InstantSorceryMax)
+            results.Recommendations.Add($"✓ Instants/Sorceries: {instantSorceryCount} - fits the {archetype} target band (examples: {FormatNameList(GetTopNamesByType("Instant").Concat(GetTopNamesByType("Sorcery")))})");
         else
-            results.Recommendations.Add($"⚠️  Instants/Sorceries: {instantCount + sorceryCount} - Consider increasing to ~12+ for better interaction windows. Current examples: {FormatNameList(GetTopNamesByType("Instant").Concat(GetTopNamesByType("Sorcery")))}");
+            results.Recommendations.Add($"💡 Instants/Sorceries: {instantSorceryCount} - above the {archetype} target of {targets.InstantSorceryMin}-{targets.InstantSorceryMax}. Make sure those spells still advance your main plan.");
 
         if (artifactCount > 0)
             results.Recommendations.Add($"Artifacts: {artifactCount} - {(artifactCount < 5 ? "Utility pieces" : "Strong artifact synergy")}");
@@ -557,12 +1201,12 @@ public class DeckEvaluator
         int counterCount = deck.Cards.Count(card => !card.IsLand && DeckAnalysis.GetCategoryTags(card).Contains("Counterspell"));
         int interactionCount = removalCount + counterCount;
 
-        const int removalMin = 8;
-        const int removalMax = 14;
-        const int drawMin = 8;
-        const int drawMax = 14;
-        const int interactionMin = 12;
-        const int interactionMax = 20;
+        int drawMin = targets.DrawMin;
+        int drawMax = targets.DrawMax;
+        int interactionMin = targets.InteractionMin;
+        int interactionMax = targets.InteractionMax;
+        int removalMin = Math.Max(4, interactionMin - 4);
+        int removalMax = Math.Max(removalMin, interactionMax - 4);
 
         results.Recommendations.Add($"Removal: {removalCount} (target {removalMin}-{removalMax})");
         if (removalCount < removalMin)
@@ -590,14 +1234,45 @@ public class DeckEvaluator
 
         results.Recommendations.Add("\n=== RAMP ANALYSIS ===");
         int rampCount = deck.Cards.Count(card => !card.IsLand && DeckAnalysis.GetCategoryTags(card).Contains("Ramp"));
-        const int rampMin = 8;
-        const int rampMax = 14;
+        int rampMin = targets.RampMin;
+        int rampMax = targets.RampMax;
         if (rampCount < rampMin)
             results.Recommendations.Add($"⚠️  Ramp is low ({rampCount} / target {rampMin}-{rampMax}): add ~{rampMin - rampCount} mana accelerators. Current ramp: {FormatNameList(GetTopNamesByTag("Ramp"))}");
         else if (rampCount > rampMax)
             results.Recommendations.Add($"💡 Ramp is high ({rampCount}): trim ~{Math.Max(1, rampCount - rampMax)} for more threats. Trim candidates: {FormatNameList(GetTrimCandidatesByTag("Ramp"))}");
         else
             results.Recommendations.Add($"✓ Ramp is healthy ({rampCount} / target {rampMin}-{rampMax}): {FormatNameList(GetTopNamesByTag("Ramp"))}");
+
+        results.Recommendations.Add("\n=== ARCHETYPE FIT ===");
+        results.Recommendations.Add($"Primary plan check: {targets.FocusSummary}");
+        if (tutorCount < targets.TutorMin)
+            results.Recommendations.Add($"⚠️  Tutors: {tutorCount} - below the {archetype} target of {targets.TutorMin}-{targets.TutorMax}. Add more consistency if the deck relies on specific engines or finishers.");
+        else if (tutorCount > targets.TutorMax)
+            results.Recommendations.Add($"💡 Tutors: {tutorCount} - above the {archetype} target of {targets.TutorMin}-{targets.TutorMax}. Some tutor slots may be weaker than direct payoff cards.");
+        else
+            results.Recommendations.Add($"✓ Tutors: {tutorCount} - consistent with the {archetype} target band of {targets.TutorMin}-{targets.TutorMax}.");
+
+        switch (archetype)
+        {
+            case DeckArchetype.Spellslinger when creatureCount > targets.CreatureMax:
+                results.Recommendations.Add("⚠️  This spellslinger build is carrying too many creatures. Trim lower-impact bodies for cheap cantrips, interaction, or engine pieces.");
+                break;
+            case DeckArchetype.Ramp when highCost < 10:
+                results.Recommendations.Add("💡 The ramp package is present, but the payoff band is light. Consider more 5+ mana cards that actually reward acceleration.");
+                break;
+            case DeckArchetype.Tribal when !hasPrimaryTribe:
+                results.Recommendations.Add("⚠️  Tribal model selected, but the list does not show a strong tribe concentration yet. Increase creature-type overlap or switch the model.");
+                break;
+            case DeckArchetype.Tribal:
+                results.Recommendations.Add($"✓ Tribal density check: {primaryTribeCount} members of the leading tribe ({primaryTribe}) found in the current list.");
+                break;
+            case DeckArchetype.Tokens when tokenCount < 7:
+                results.Recommendations.Add("⚠️  Tokens model selected, but there are not many token generators. Add more repeatable token makers or pivot to a different model.");
+                break;
+            case DeckArchetype.Combo when tutorCount + drawCount < 14:
+                results.Recommendations.Add("⚠️  Combo shells need more selection and assembly tools. Increase tutors or card draw so your engine shows up more often.");
+                break;
+        }
 
         results.Recommendations.Add("\n=== PLAYABILITY METRICS ===");
         double cardsPerTurn = maxTurns > 0 ? results.AverageCardsPlayable / maxTurns : 0;
@@ -607,6 +1282,10 @@ public class DeckEvaluator
         results.Recommendations.Add($"Mana efficiency: {results.AverageManaEfficiency:F1}% of produced mana converted into casts");
         results.Recommendations.Add($"Early turn actions (T1-T3): {results.AverageEarlyTurnActions:F2}");
         results.Recommendations.Add($"Stranded 5+ mana cards in hand at game end: {results.AverageStrandedHighCostCards:F2}");
+        if (deck.Commander != null)
+            results.Recommendations.Add($"Commander cast rate: {results.CommanderCastRate:F1}% | Average cast turn: {(results.AverageCommanderCastTurn > 0 ? $"T{results.AverageCommanderCastTurn:F2}" : "not cast")}");
+        if (results.LearningGamesSeen > 0)
+            results.Recommendations.Add($"Learning profile games recorded: {results.LearningGamesSeen}");
 
         if (results.AverageIdleTurns > 2)
             results.Recommendations.Add("⚠️  Too many idle turns. Consider adding more low-cost cards or mana acceleration.");
@@ -625,5 +1304,8 @@ public class DeckEvaluator
 
         if (results.AverageStrandedHighCostCards > 2.0)
             results.Recommendations.Add($"💡 Expensive cards are getting stranded in hand. Trim a few 5+ mana spells or add more ramp. Likely trim candidates: {FormatNameList(deck.Cards.Where(card => !card.IsLand && card.ManaCost >= 5).OrderByDescending(card => card.ManaCost).Select(card => card.Name ?? string.Empty))}");
+
+        if (deck.Commander != null && results.CommanderCastRate < 65)
+            results.Recommendations.Add("⚠️  The commander is not coming down often enough in goldfish lines. Add more ramp, reduce clunky early plays, or lower the density of reactive spells that crowd out commander turns.");
     }
 }

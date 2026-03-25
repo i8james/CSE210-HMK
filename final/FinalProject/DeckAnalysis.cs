@@ -4,6 +4,16 @@ using System.Linq;
 
 #nullable enable
 
+public enum DeckArchetype
+{
+    Midrange,
+    Ramp,
+    Spellslinger,
+    Tribal,
+    Tokens,
+    Combo
+}
+
 public static class DeckAnalysis
 {
     public static bool IsNonLand(Card card)
@@ -179,5 +189,39 @@ public static class DeckAnalysis
             combos.Add(("Tutors", tutors));
 
         return combos;
+    }
+
+    public static bool HasTribe(Card card, string tribe)
+    {
+        return GetCategoryTags(card).Contains($"Tribe:{tribe}");
+    }
+
+    public static DeckArchetype DetectPrimaryArchetype(Deck deck)
+    {
+        int rampCount = CountRoleCards(deck, "Ramp");
+        int drawCount = CountRoleCards(deck, "Card Draw");
+        int tokenCount = CountRoleCards(deck, "Token Generation");
+        int tutorCount = CountRoleCards(deck, "Tutor");
+        int interactionCount = CountRoleCards(deck, "Removal") + CountRoleCards(deck, "Counterspell");
+        int instantSorceryCount = deck.Cards.Count(card => IsNonLand(card) && (HasType(card, "Instant") || HasType(card, "Sorcery")));
+        int comboCount = DetectComboPieces(deck).Sum(group => group.Cards.Count);
+        double averageManaValue = deck.Cards.Where(IsNonLand).DefaultIfEmpty().Average(card => card == null ? 0 : card.ManaCost);
+
+        if (comboCount >= 6 || (comboCount >= 4 && tutorCount >= 2))
+            return DeckArchetype.Combo;
+
+        if (instantSorceryCount >= 18 && drawCount + interactionCount >= 12)
+            return DeckArchetype.Spellslinger;
+
+        if (TryGetPrimaryTribe(deck, out _, out int tribeCount, out _) && tribeCount >= 8)
+            return DeckArchetype.Tribal;
+
+        if (tokenCount >= 7)
+            return DeckArchetype.Tokens;
+
+        if (rampCount >= 12 || (rampCount >= 9 && averageManaValue >= 3.5))
+            return DeckArchetype.Ramp;
+
+        return DeckArchetype.Midrange;
     }
 }

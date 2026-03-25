@@ -19,6 +19,7 @@ public class Card
 {
     public string? Name { get; set; }
     public bool IsLand { get; set; }
+    public bool IsCommander { get; set; }
     public int ManaCost { get; set; }
     public List<string> Colors { get; set; } = new List<string>();
     public string? Type { get; set; }
@@ -29,16 +30,20 @@ public class Card
 public class Deck
 {
     public List<Card> Cards { get; } = new List<Card>();
+    public Card? Commander { get; private set; }
 
     public void AddCard(Card card)
     {
+        if (card.IsCommander)
+            Commander = card;
+
         Cards.Add(card);
     }
 
     public List<Card> GetShuffledDeck(Random? random = null)
     {
         random ??= new Random();
-        var shuffled = new List<Card>(Cards);
+        var shuffled = Cards.Where(card => !card.IsCommander).ToList();
         for (int index = shuffled.Count - 1; index > 0; index--)
         {
             int swapIndex = random.Next(index + 1);
@@ -53,14 +58,14 @@ public class Deck
     public Dictionary<int, int> GetManaCurve()
     {
         return Cards
-            .Where(card => !card.IsLand)
+            .Where(card => !card.IsLand && !card.IsCommander)
             .GroupBy(card => card.ManaCost)
             .ToDictionary(group => group.Key, group => group.Count());
     }
 
     public Dictionary<string, int> GetManaBrackets()
     {
-        var nonLands = Cards.Where(card => !card.IsLand).ToList();
+        var nonLands = Cards.Where(card => !card.IsLand && !card.IsCommander).ToList();
         return new Dictionary<string, int>
         {
             ["0-2"] = nonLands.Count(card => card.ManaCost >= 0 && card.ManaCost <= 2),
@@ -87,10 +92,18 @@ public class SimulationResult
     public int ManaSpent { get; set; }
     public int EarlyTurnActions { get; set; }
     public int StrandedHighCostCards { get; set; }
+    public int CommanderCastTurn { get; set; }
+    public bool CommanderCast { get; set; }
 }
 
 public class EvaluationResults
 {
+    public DeckArchetype SelectedArchetype { get; set; }
+    public DeckArchetype DetectedArchetype { get; set; }
+    public double EstimatedPowerLevel { get; set; }
+    public string EstimatedBracket { get; set; } = string.Empty;
+    public string PowerSummary { get; set; } = string.Empty;
+    public List<string> PowerSignals { get; set; } = new List<string>();
     public double AverageMissedLands { get; set; }
     public double AverageLandsPlayed { get; set; }
     public double AverageCardsPlayable { get; set; }
@@ -106,5 +119,8 @@ public class EvaluationResults
     public double AverageManaEfficiency { get; set; }
     public double AverageEarlyTurnActions { get; set; }
     public double AverageStrandedHighCostCards { get; set; }
+    public double AverageCommanderCastTurn { get; set; }
+    public double CommanderCastRate { get; set; }
+    public int LearningGamesSeen { get; set; }
     public List<string> Recommendations { get; set; } = new List<string>();
 }

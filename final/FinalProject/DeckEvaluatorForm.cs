@@ -17,7 +17,10 @@ public class DeckEvaluatorForm : Form
     private static readonly HttpClient Http = new HttpClient();
 
     private readonly Dictionary<string, CardDbRecord> cardDatabase = new Dictionary<string, CardDbRecord>(StringComparer.OrdinalIgnoreCase);
+    private readonly Dictionary<string, CardDbRecord> normalizedCardIndex = new Dictionary<string, CardDbRecord>(StringComparer.OrdinalIgnoreCase);
+    private readonly HashSet<string> persistedCardNames = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
     private readonly List<string> missingCardNames = new List<string>();
+    private readonly string cardDatabaseFilePath;
 
     private TextBox commanderTextBox = null!;
     private TextBox moxfieldLinkTextBox = null!;
@@ -31,9 +34,12 @@ public class DeckEvaluatorForm : Form
     private Button quitButton = null!;
     private CheckBox onDrawCheckBox = null!;
     private Button saveReportButton = null!;
+    private Button trainButton = null!;
+    private ComboBox archetypeComboBox = null!;
 
     public DeckEvaluatorForm()
     {
+        cardDatabaseFilePath = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "cards.csv");
         Text = "MTG Commander Deck Evaluator";
         Size = new Size(900, 740);
         MinimumSize = new Size(860, 700);
@@ -172,6 +178,29 @@ public class DeckEvaluatorForm : Form
         };
         Controls.Add(onDrawCheckBox);
 
+        var archetypeLabel = new Label
+        {
+            Text = "Archetype Model:",
+            Font = new Font("Segoe UI", 9, FontStyle.Bold),
+            ForeColor = Color.FromArgb(55, 65, 81),
+            Location = new Point(550, 428),
+            Size = new Size(115, 24)
+        };
+        Controls.Add(archetypeLabel);
+
+        archetypeComboBox = new ComboBox
+        {
+            DropDownStyle = ComboBoxStyle.DropDownList,
+            Font = new Font("Segoe UI", 9),
+            Location = new Point(670, 424),
+            Size = new Size(190, 26)
+        };
+        archetypeComboBox.Items.Add("Auto Detect");
+        foreach (DeckArchetype archetype in Enum.GetValues(typeof(DeckArchetype)))
+            archetypeComboBox.Items.Add(archetype);
+        archetypeComboBox.SelectedIndex = 0;
+        Controls.Add(archetypeComboBox);
+
         saveReportButton = new Button
         {
             Text = "Save Report",
@@ -185,6 +214,20 @@ public class DeckEvaluatorForm : Form
         saveReportButton.FlatAppearance.BorderSize = 0;
         saveReportButton.Click += SaveReportButton_Click;
         Controls.Add(saveReportButton);
+
+        trainButton = new Button
+        {
+            Text = "Train Bot",
+            Font = new Font("Segoe UI", 9, FontStyle.Bold),
+            BackColor = Color.FromArgb(14, 116, 144),
+            ForeColor = Color.White,
+            FlatStyle = FlatStyle.Flat,
+            Location = new Point(780, 488),
+            Size = new Size(80, 24)
+        };
+        trainButton.FlatAppearance.BorderSize = 0;
+        trainButton.Click += TrainButton_Click;
+        Controls.Add(trainButton);
 
         progressBar = new ProgressBar
         {
@@ -414,6 +457,10 @@ public class DeckEvaluatorForm : Form
             return entries;
 
         string normalized = markdown.Replace("\r\n", "\n");
+        int deckListIndex = normalized.IndexOf("## Deck List", StringComparison.OrdinalIgnoreCase);
+        if (deckListIndex >= 0)
+            normalized = normalized.Substring(deckListIndex + "## Deck List".Length);
+
         int contentIndex = normalized.IndexOf("Markdown Content:", StringComparison.OrdinalIgnoreCase);
         if (contentIndex >= 0)
             normalized = normalized.Substring(contentIndex + "Markdown Content:".Length);
@@ -449,6 +496,24 @@ public class DeckEvaluatorForm : Form
                 continue;
 
             entries.Add((name, quantity));
+        }
+
+        if (!entries.Any())
+        {
+            foreach (Match match in Regex.Matches(normalized, @"(?m)^\s*(?<qty>\d+)\s+\[(?<name>[^\]]+)\]\("))
+            {
+                string name = WebUtility.HtmlDecode(match.Groups["name"].Value).Trim();
+                if (name.EndsWith(" Transform", StringComparison.OrdinalIgnoreCase))
+                    name = name.Substring(0, name.Length - " Transform".Length).TrimEnd();
+
+                if (name.Length == 0)
+                    continue;
+
+                if (!int.TryParse(match.Groups["qty"].Value, out int quantity) || quantity <= 0)
+                    continue;
+
+                entries.Add((name, quantity));
+            }
         }
 
         return entries;
@@ -488,13 +553,10 @@ public class DeckEvaluatorForm : Form
         var lines = deckInputTextBox.Text.Split(new[] { '\r', '\n' }, StringSplitOptions.RemoveEmptyEntries);
         foreach (var line in lines)
         {
-            var trimmed = line.Trim();
-            if (trimmed.Length == 0)
+            if (TryParseDeckEntry(line, out _, out int quantity))
+                total += quantity;
+            else if (ShouldIgnoreDeckLine(line))
                 continue;
-
-            var parts = trimmed.Split(new[] { ' ' }, 2, StringSplitOptions.RemoveEmptyEntries);
-            if (parts.Length > 0 && int.TryParse(parts[0], out int quantity))
-                total += Math.Max(0, quantity);
             else
                 total += 1;
         }
@@ -535,6 +597,7 @@ public class DeckEvaluatorForm : Form
             throw new InvalidOperationException("Please provide a valid Moxfield deck URL or deck id.");
 
         string canonicalDeckUrl = $"https://www.moxfield.com/decks/{deckId}";
+        string bareDeckUrl = $"https://moxfield.com/decks/{deckId}";
 
         var endpoints = new[]
         {
@@ -573,16 +636,32 @@ public class DeckEvaluatorForm : Form
         }
 
         string commanderHint = string.Empty;
-        string? pageHtml = await TryDownloadTextAsync(canonicalDeckUrl, "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8");
-        if (!string.IsNullOrWhiteSpace(pageHtml))
-            commanderHint = ExtractCommanderFromMoxfieldHtml(pageHtml);
-
-        string? mirroredMarkdown = await TryDownloadTextAsync($"https://r.jina.ai/http://{canonicalDeckUrl}", "text/plain, text/markdown, */*");
-        if (!string.IsNullOrWhiteSpace(mirroredMarkdown))
+        foreach (var pageUrl in new[] { canonicalDeckUrl, bareDeckUrl })
         {
-            var parsedMirrorDeck = TryParseMoxfieldMirrorDeck(mirroredMarkdown, commanderHint);
-            if (parsedMirrorDeck.HasValue)
-                return parsedMirrorDeck.Value;
+            string? pageHtml = await TryDownloadTextAsync(pageUrl, "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8");
+            if (!string.IsNullOrWhiteSpace(pageHtml))
+            {
+                commanderHint = ExtractCommanderFromMoxfieldHtml(pageHtml);
+                var parsedHtmlDeck = TryParseMoxfieldMirrorDeck(pageHtml, commanderHint);
+                if (parsedHtmlDeck.HasValue)
+                    return parsedHtmlDeck.Value;
+            }
+
+            foreach (var mirrorUrl in new[]
+            {
+                $"https://r.jina.ai/http://{pageUrl}",
+                $"https://r.jina.ai/http://{pageUrl}/download",
+                $"https://r.jina.ai/http://{pageUrl}?view=spoiler"
+            })
+            {
+                string? mirroredMarkdown = await TryDownloadTextAsync(mirrorUrl, "text/plain, text/markdown, */*");
+                if (string.IsNullOrWhiteSpace(mirroredMarkdown))
+                    continue;
+
+                var parsedMirrorDeck = TryParseMoxfieldMirrorDeck(mirroredMarkdown, commanderHint);
+                if (parsedMirrorDeck.HasValue)
+                    return parsedMirrorDeck.Value;
+            }
         }
 
         throw new InvalidOperationException("Unable to import deck from Moxfield. The public API is currently blocking direct requests from this app, and the public page fallback could not recover the deck list. Verify the deck is public and try the full deck URL.");
@@ -630,10 +709,9 @@ public class DeckEvaluatorForm : Form
             int totalImported = 0;
             foreach (var line in importedLines)
             {
-                var parts = line.Trim().Split(new[] { ' ' }, 2);
-                if (parts.Length > 0 && int.TryParse(parts[0], out int quantity))
+                if (TryParseDeckEntry(line, out _, out int quantity))
                     totalImported += quantity;
-                else
+                else if (!ShouldIgnoreDeckLine(line))
                     totalImported += 1;
             }
 
@@ -681,8 +759,9 @@ public class DeckEvaluatorForm : Form
     {
         missingCardNames.Clear();
         var missing = cardNames
-            .Where(name => !string.IsNullOrWhiteSpace(name) && !cardDatabase.ContainsKey(name.Trim()))
-            .Select(name => name.Trim())
+            .Where(name => !string.IsNullOrWhiteSpace(name))
+            .Select(name => NormalizeDeckCardName(name))
+            .Where(name => name.Length > 0 && FindCardRecord(name) == null)
             .Distinct(StringComparer.OrdinalIgnoreCase)
             .ToList();
 
@@ -690,12 +769,75 @@ public class DeckEvaluatorForm : Form
             return;
 
         progressLabel.Text = $"Fetching {missing.Count} unknown card(s) from Scryfall...";
-        foreach (var name in missing)
+        var unresolved = await FetchMissingCardsFromScryfallAsync(missing);
+        foreach (var name in unresolved)
         {
             bool resolved = await TryFetchFromScryfallAsync(name);
             if (!resolved)
                 missingCardNames.Add(name);
         }
+    }
+
+    private async Task<List<string>> FetchMissingCardsFromScryfallAsync(List<string> names)
+    {
+        var unresolved = new HashSet<string>(names, StringComparer.OrdinalIgnoreCase);
+        const int maxIdentifiersPerRequest = 75;
+
+        for (int index = 0; index < names.Count; index += maxIdentifiersPerRequest)
+        {
+            var chunk = names.Skip(index).Take(maxIdentifiersPerRequest).Distinct(StringComparer.OrdinalIgnoreCase).ToList();
+            if (!chunk.Any())
+                continue;
+
+            try
+            {
+                using var payload = new StringContent(JsonSerializer.Serialize(new
+                {
+                    identifiers = chunk.Select(name => new { name }).ToList()
+                }), System.Text.Encoding.UTF8, "application/json");
+
+                using var response = await Http.PostAsync("https://api.scryfall.com/cards/collection", payload);
+                if (!response.IsSuccessStatusCode)
+                    continue;
+
+                string json = await response.Content.ReadAsStringAsync();
+                using var document = JsonDocument.Parse(json);
+                var root = document.RootElement;
+
+                if (root.TryGetProperty("data", out var dataElement) && dataElement.ValueKind == JsonValueKind.Array)
+                {
+                    foreach (var cardElement in dataElement.EnumerateArray())
+                    {
+                        var record = BuildCardRecordFromScryfall(cardElement, string.Empty);
+                        if (record == null)
+                            continue;
+
+                        IndexCardRecord(record, record.Name);
+                        PersistCardRecord(record);
+                        unresolved.Remove(record.Name);
+                    }
+                }
+
+                if (root.TryGetProperty("not_found", out var notFoundElement) && notFoundElement.ValueKind == JsonValueKind.Array)
+                {
+                    foreach (var missing in notFoundElement.EnumerateArray())
+                    {
+                        if (missing.TryGetProperty("name", out var missingNameElement) && missingNameElement.ValueKind == JsonValueKind.String)
+                        {
+                            var missingName = NormalizeDeckCardName(missingNameElement.GetString());
+                            if (missingName.Length > 0)
+                                unresolved.Add(missingName);
+                        }
+                    }
+                }
+            }
+            catch
+            {
+                // Fall back to one-by-one fetches for this chunk.
+            }
+        }
+
+        return unresolved.ToList();
     }
 
     private async Task<bool> TryFetchFromScryfallAsync(string name)
@@ -714,52 +856,12 @@ public class DeckEvaluatorForm : Form
                 var root = document.RootElement;
                 if (root.TryGetProperty("object", out var objectProperty) && objectProperty.GetString() == "error")
                     continue;
+                var record = BuildCardRecordFromScryfall(root, name);
+                if (record == null)
+                    continue;
 
-                string cardName = root.TryGetProperty("name", out var nameProperty) ? nameProperty.GetString() ?? name : name;
-                int cmc = root.TryGetProperty("cmc", out var cmcProperty) ? (int)Math.Round(cmcProperty.GetDouble()) : 3;
-                string typeLine = root.TryGetProperty("type_line", out var typeProperty) ? typeProperty.GetString() ?? string.Empty : string.Empty;
-
-                string oracleText = string.Empty;
-                if (root.TryGetProperty("oracle_text", out var oracleProperty))
-                {
-                    oracleText = oracleProperty.GetString() ?? string.Empty;
-                }
-                else if (root.TryGetProperty("card_faces", out var faces) && faces.ValueKind == JsonValueKind.Array)
-                {
-                    var parts = new List<string>();
-                    foreach (var face in faces.EnumerateArray())
-                    {
-                        if (face.TryGetProperty("oracle_text", out var faceOracle))
-                            parts.Add(faceOracle.GetString() ?? string.Empty);
-                    }
-                    oracleText = string.Join(" // ", parts);
-                }
-
-                var colors = new List<string>();
-                if (root.TryGetProperty("colors", out var colorProperty) && colorProperty.ValueKind == JsonValueKind.Array)
-                {
-                    foreach (var color in colorProperty.EnumerateArray())
-                    {
-                        if (color.GetString() is string colorCode && colorCode.Length > 0)
-                            colors.Add(colorCode);
-                    }
-                }
-
-                bool isLand = typeLine.IndexOf("Land", StringComparison.OrdinalIgnoreCase) >= 0;
-                var record = new CardDbRecord
-                {
-                    Name = cardName,
-                    ManaCost = isLand ? 0 : cmc,
-                    Colors = colors,
-                    Type = typeLine,
-                    Category = string.Empty,
-                    IsLand = isLand,
-                    OracleText = oracleText
-                };
-
-                cardDatabase[cardName] = record;
-                if (!cardName.Equals(name, StringComparison.OrdinalIgnoreCase))
-                    cardDatabase[name] = record;
+                IndexCardRecord(record, name);
+                PersistCardRecord(record);
                 return true;
             }
 
@@ -773,26 +875,25 @@ public class DeckEvaluatorForm : Form
 
     private void LoadCardDatabase()
     {
-        string dataFile = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "cards.csv");
-        if (!File.Exists(dataFile))
+        if (!File.Exists(cardDatabaseFilePath))
         {
-            File.WriteAllText(dataFile,
-                "Name,ManaCost,Colors,Type,Category,IsLand,OracleText\n" +
-                "Island,0, ,Land,Land,true,\"\"\n" +
-                "Forest,0, ,Land,Land,true,\"\"\n" +
-                "Swamp,0, ,Land,Land,true,\"\"\n" +
-                "Mountain,0, ,Land,Land,true,\"\"\n" +
-                "Plains,0, ,Land,Land,true,\"\"\n" +
-                "Watery Grave,0,U;B,Land — Island Swamp,Land,true,\"\"\n" +
-                "Sol Ring,1, ,Artifact,Artifact,false,\"\"\n" +
-                "Swords to Plowshares,1, ,Instant,Removal,false,\"Remove target creature or planeswalker.\"\n" +
-                "Rhystic Study,3,U,Enchantment,Draw,false,\"Whenever an opponent casts a spell, you may draw a card unless that player pays {1}.\"\n" +
-                "Nicol Bolas Dragon God,6,U;B;R,Planeswalker,Planeswalker,false,\"\"\n");
+            File.WriteAllText(cardDatabaseFilePath,
+                "Name,ManaCost,Colors,Type,Category,CardType,IsLand,OracleText\n" +
+                "Island,0,,Land,Land,Land,true,\"\"\n" +
+                "Forest,0,,Land,Land,Land,true,\"\"\n" +
+                "Swamp,0,,Land,Land,Land,true,\"\"\n" +
+                "Mountain,0,,Land,Land,Land,true,\"\"\n" +
+                "Plains,0,,Land,Land,Land,true,\"\"\n" +
+                "Watery Grave,0,U;B,Land — Island Swamp,Land,Land,true,\"\"\n" +
+                "Sol Ring,1,,Artifact,Ramp,Artifact,false,\"\"\n" +
+                "Swords to Plowshares,1,,Instant,Removal,Instant,false,\"Remove target creature or planeswalker.\"\n" +
+                "Rhystic Study,3,U,Enchantment,Card Draw,Enchantment,false,\"Whenever an opponent casts a spell, you may draw a card unless that player pays {1}.\"\n" +
+                "Nicol Bolas Dragon God,6,U;B;R,Planeswalker,Planeswalker,Planeswalker,false,\"\"\n");
         }
 
         try
         {
-            foreach (var row in File.ReadAllLines(dataFile).Skip(1))
+            foreach (var row in File.ReadAllLines(cardDatabaseFilePath).Skip(1))
             {
                 if (string.IsNullOrWhiteSpace(row))
                     continue;
@@ -805,9 +906,11 @@ public class DeckEvaluatorForm : Form
                 if (name.Length == 0)
                     continue;
 
+                persistedCardNames.Add(name);
+
                 int manaCost = 0;
                 if (double.TryParse(fields[1], out double parsedManaCost))
-                    manaCost = (int)Math.Round(parsedManaCost);
+                    manaCost = NormalizeManaValue(parsedManaCost);
 
                 var colors = fields.Length >= 3
                     ? fields[2].Split(new[] { ';' }, StringSplitOptions.RemoveEmptyEntries).Select(color => color.Trim()).Where(color => color.Length > 0).ToList()
@@ -832,7 +935,7 @@ public class DeckEvaluatorForm : Form
                 if (!isLand && type.IndexOf("land", StringComparison.OrdinalIgnoreCase) >= 0)
                     isLand = true;
 
-                cardDatabase[name] = new CardDbRecord
+                var record = new CardDbRecord
                 {
                     Name = name,
                     ManaCost = manaCost,
@@ -842,12 +945,237 @@ public class DeckEvaluatorForm : Form
                     IsLand = isLand,
                     OracleText = oracleText
                 };
+                IndexCardRecord(record, name);
             }
         }
         catch (Exception ex)
         {
             MessageBox.Show("Failed to load card database: " + ex.Message, "Deck Evaluator", MessageBoxButtons.OK, MessageBoxIcon.Error);
         }
+    }
+
+    private static string InferCardType(string typeLine, bool isLand)
+    {
+        if (isLand || typeLine.IndexOf("Land", StringComparison.OrdinalIgnoreCase) >= 0)
+            return "Land";
+
+        foreach (var type in new[] { "Creature", "Instant", "Sorcery", "Artifact", "Enchantment", "Planeswalker", "Battle" })
+        {
+            if (typeLine.IndexOf(type, StringComparison.OrdinalIgnoreCase) >= 0)
+                return type;
+        }
+
+        return "Other";
+    }
+
+    private static string InferCategoryFromCardData(string typeLine, string oracleText, bool isLand)
+    {
+        if (isLand)
+            return "Land";
+
+        var card = new Card
+        {
+            Name = string.Empty,
+            IsLand = isLand,
+            ManaCost = 0,
+            Type = typeLine,
+            Category = string.Empty,
+            OracleText = oracleText
+        };
+
+        var tags = new List<string>();
+        if (typeLine.IndexOf("Creature", StringComparison.OrdinalIgnoreCase) >= 0) tags.Add("Creature");
+        if (typeLine.IndexOf("Instant", StringComparison.OrdinalIgnoreCase) >= 0 || typeLine.IndexOf("Sorcery", StringComparison.OrdinalIgnoreCase) >= 0) tags.Add("Instant/Sorcery");
+        if (typeLine.IndexOf("Artifact", StringComparison.OrdinalIgnoreCase) >= 0) tags.Add("Artifact");
+        if (typeLine.IndexOf("Enchantment", StringComparison.OrdinalIgnoreCase) >= 0) tags.Add("Enchantment");
+        if (typeLine.IndexOf("Planeswalker", StringComparison.OrdinalIgnoreCase) >= 0) tags.Add("Planeswalker");
+
+        string oracleLower = oracleText.ToLowerInvariant();
+        if ((oracleLower.Contains("draw") && oracleLower.Contains("card")) || oracleLower.Contains("investigate")) tags.Add("Card Draw");
+        if ((oracleLower.Contains("destroy") && oracleLower.Contains("target"))
+            || (oracleLower.Contains("exile") && oracleLower.Contains("target"))
+            || (oracleLower.Contains("fight") && oracleLower.Contains("target"))
+            || (oracleLower.Contains("damage") && oracleLower.Contains("target"))) tags.Add("Removal");
+        if ((oracleLower.Contains("add {") || oracleLower.Contains("create a treasure") || oracleLower.Contains("create treasure"))
+            && !isLand) tags.Add("Ramp");
+        if (oracleLower.Contains("search your library")) tags.Add("Tutor");
+
+        return tags.Any() ? string.Join(", ", tags.Distinct(StringComparer.OrdinalIgnoreCase)) : InferCardType(typeLine, isLand);
+    }
+
+    private static int NormalizeManaValue(double rawManaValue)
+    {
+        if (double.IsNaN(rawManaValue) || double.IsInfinity(rawManaValue))
+            return 0;
+
+        return Math.Max(0, (int)Math.Floor(rawManaValue + 1e-9));
+    }
+
+    private static string CsvEscape(string value)
+    {
+        string normalized = value.Replace("\r", " ").Replace("\n", " ");
+        if (normalized.Contains('"'))
+            normalized = normalized.Replace("\"", "\"\"");
+
+        return normalized.IndexOfAny(new[] { ',', '"' }) >= 0 ? $"\"{normalized}\"" : normalized;
+    }
+
+    private void PersistCardRecord(CardDbRecord record)
+    {
+        if (persistedCardNames.Contains(record.Name))
+            return;
+
+        string cardType = InferCardType(record.Type, record.IsLand);
+        string csvLine = string.Join(",",
+            CsvEscape(record.Name),
+            record.ManaCost.ToString("0.0", System.Globalization.CultureInfo.InvariantCulture),
+            CsvEscape(string.Join(";", record.Colors)),
+            CsvEscape(record.Type),
+            CsvEscape(record.Category),
+            CsvEscape(cardType),
+            record.IsLand ? "true" : "false",
+            CsvEscape(record.OracleText));
+
+        File.AppendAllText(cardDatabaseFilePath, csvLine + Environment.NewLine);
+        persistedCardNames.Add(record.Name);
+    }
+
+    private static string NormalizeDeckCardName(string? name)
+    {
+        if (string.IsNullOrWhiteSpace(name))
+            return string.Empty;
+
+        string normalized = name.Trim();
+        normalized = Regex.Replace(normalized, @"^\d+\s*x?\s*", string.Empty, RegexOptions.IgnoreCase);
+        normalized = Regex.Replace(normalized, @"\sx\d+$", string.Empty, RegexOptions.IgnoreCase);
+        normalized = Regex.Replace(normalized, @"\s+\([^\)]*\)$", string.Empty);
+        normalized = Regex.Replace(normalized, @"\s+\[[^\]]*\]$", string.Empty);
+        normalized = Regex.Replace(normalized, @"\s+\d+[A-Za-z]?$", string.Empty);
+        normalized = normalized.Replace("â€”", "—").Trim();
+        normalized = Regex.Replace(normalized, @"\s+", " ");
+        return normalized;
+    }
+
+    private static string BuildLookupKey(string? name)
+    {
+        if (string.IsNullOrWhiteSpace(name))
+            return string.Empty;
+
+        string lowered = NormalizeDeckCardName(name).ToLowerInvariant();
+        lowered = Regex.Replace(lowered, @"[^a-z0-9\s'\-,]", string.Empty);
+        return Regex.Replace(lowered, @"\s+", " ").Trim();
+    }
+
+    private void IndexCardRecord(CardDbRecord record, params string[] aliases)
+    {
+        if (string.IsNullOrWhiteSpace(record.Name))
+            return;
+
+        cardDatabase[record.Name] = record;
+        string primaryKey = BuildLookupKey(record.Name);
+        if (primaryKey.Length > 0)
+            normalizedCardIndex[primaryKey] = record;
+
+        foreach (var face in record.Name.Split(new[] { "//" }, StringSplitOptions.RemoveEmptyEntries))
+        {
+            string faceKey = BuildLookupKey(face);
+            if (faceKey.Length > 0)
+                normalizedCardIndex[faceKey] = record;
+        }
+
+        foreach (var alias in aliases)
+        {
+            if (string.IsNullOrWhiteSpace(alias))
+                continue;
+
+            string cleanedAlias = NormalizeDeckCardName(alias);
+            if (cleanedAlias.Length > 0)
+                cardDatabase[cleanedAlias] = record;
+
+            string aliasKey = BuildLookupKey(cleanedAlias);
+            if (aliasKey.Length > 0)
+                normalizedCardIndex[aliasKey] = record;
+        }
+    }
+
+    private CardDbRecord? FindCardRecord(string? name)
+    {
+        if (string.IsNullOrWhiteSpace(name))
+            return null;
+
+        string cleaned = NormalizeDeckCardName(name);
+        if (cleaned.Length == 0)
+            return null;
+
+        if (cardDatabase.TryGetValue(cleaned, out var direct))
+            return direct;
+
+        string key = BuildLookupKey(cleaned);
+        if (key.Length > 0 && normalizedCardIndex.TryGetValue(key, out var indexed))
+            return indexed;
+
+        return cardDatabase.Values.FirstOrDefault(card => string.Equals(card.Name, cleaned, StringComparison.OrdinalIgnoreCase));
+    }
+
+    private CardDbRecord? BuildCardRecordFromScryfall(JsonElement root, string requestedName)
+    {
+        string cardName = root.TryGetProperty("name", out var nameProperty) ? nameProperty.GetString() ?? requestedName : requestedName;
+        if (string.IsNullOrWhiteSpace(cardName))
+            return null;
+
+        int cmc = root.TryGetProperty("cmc", out var cmcProperty) && cmcProperty.ValueKind == JsonValueKind.Number
+            ? NormalizeManaValue(cmcProperty.GetDouble())
+            : 3;
+
+        string typeLine = root.TryGetProperty("type_line", out var typeProperty)
+            ? typeProperty.GetString() ?? string.Empty
+            : string.Empty;
+
+        string oracleText = string.Empty;
+        if (root.TryGetProperty("oracle_text", out var oracleProperty))
+        {
+            oracleText = oracleProperty.GetString() ?? string.Empty;
+        }
+        else if (root.TryGetProperty("card_faces", out var faces) && faces.ValueKind == JsonValueKind.Array)
+        {
+            var parts = new List<string>();
+            foreach (var face in faces.EnumerateArray())
+            {
+                if (face.TryGetProperty("oracle_text", out var faceOracle))
+                    parts.Add(faceOracle.GetString() ?? string.Empty);
+            }
+            oracleText = string.Join(" // ", parts);
+        }
+
+        var colors = new List<string>();
+        if (root.TryGetProperty("colors", out var colorProperty) && colorProperty.ValueKind == JsonValueKind.Array)
+        {
+            foreach (var color in colorProperty.EnumerateArray())
+            {
+                if (color.GetString() is string colorCode && colorCode.Length > 0)
+                    colors.Add(colorCode);
+            }
+        }
+        if (!colors.Any() && root.TryGetProperty("color_identity", out var identityProperty) && identityProperty.ValueKind == JsonValueKind.Array)
+        {
+            foreach (var color in identityProperty.EnumerateArray())
+            {
+                if (color.GetString() is string colorCode && colorCode.Length > 0)
+                    colors.Add(colorCode);
+            }
+        }
+
+        bool isLand = typeLine.IndexOf("Land", StringComparison.OrdinalIgnoreCase) >= 0;
+        return new CardDbRecord
+        {
+            Name = cardName,
+            ManaCost = isLand ? 0 : cmc,
+            Colors = colors.Distinct(StringComparer.OrdinalIgnoreCase).ToList(),
+            Type = typeLine,
+            Category = InferCategoryFromCardData(typeLine, oracleText, isLand),
+            IsLand = isLand,
+            OracleText = oracleText
+        };
     }
 
     private void ApplyOracleTextCategoryTags(Card card)
@@ -949,17 +1277,14 @@ public class DeckEvaluatorForm : Form
     {
         try
         {
+            SetActionButtonsEnabled(false);
             var rawInputLines = deckInputTextBox.Text.Split(new[] { '\r', '\n' }, StringSplitOptions.RemoveEmptyEntries);
             var prefetchNames = rawInputLines
-                .Select(line =>
-                {
-                    var parts = line.Trim().Split(new[] { ' ' }, 2);
-                    return parts.Length == 2 && int.TryParse(parts[0], out _) ? parts[1].Trim() : string.Empty;
-                })
+                .Select(line => TryParseDeckEntry(line, out string parsedName, out _) ? parsedName : string.Empty)
                 .Where(name => name.Length > 0)
                 .ToList();
             if (!string.IsNullOrWhiteSpace(commanderTextBox.Text))
-                prefetchNames.Add(commanderTextBox.Text.Trim());
+                prefetchNames.Add(NormalizeDeckCardName(commanderTextBox.Text));
             await PrefetchMissingCardsAsync(prefetchNames);
 
             Deck deck = await ParseDeck(deckInputTextBox.Text, commanderTextBox.Text);
@@ -971,13 +1296,13 @@ public class DeckEvaluatorForm : Form
                 return;
             }
 
-            int numSimulations = 1000000;
+            int numSimulations = 100000;
             int maxTurns = 10;
             progressBar.Value = 0;
             progressLabel.Text = "Running simulations...";
 
             bool onDraw = onDrawCheckBox.Checked;
-            var evaluator = new DeckEvaluator(deck);
+            var evaluator = new DeckEvaluator(deck, GetSelectedArchetypeOverride());
             var results = await Task.Run(() => evaluator.RunSimulations(numSimulations, maxTurns, onDraw, progress =>
             {
                 Invoke((Action)(() =>
@@ -998,6 +1323,78 @@ public class DeckEvaluatorForm : Form
             resultsTextBox.SelectionColor = Color.Red;
             resultsTextBox.AppendText($"Error: {ex.Message}");
         }
+        finally
+        {
+            SetActionButtonsEnabled(true);
+        }
+    }
+
+    private async void TrainButton_Click(object? sender, EventArgs e)
+    {
+        const int batches = 6;
+        const int simulationsPerBatch = 100000;
+        const int maxTurns = 10;
+
+        try
+        {
+            SetActionButtonsEnabled(false);
+            progressBar.Minimum = 0;
+            progressBar.Maximum = batches;
+            progressBar.Value = 0;
+            progressLabel.Text = $"Training goldfish bot ({batches} batches x {simulationsPerBatch:N0} sims)...";
+
+            bool onDraw = onDrawCheckBox.Checked;
+            EvaluationResults results = await RunHeadlessTrainingAsync(
+                deckInputTextBox.Text,
+                commanderTextBox.Text,
+                simulationsPerBatch,
+                maxTurns,
+                batches,
+                onDraw,
+                message =>
+                {
+                    if (!IsHandleCreated)
+                        return;
+
+                    BeginInvoke((Action)(() =>
+                    {
+                        progressLabel.Text = message;
+                        var batchMatch = Regex.Match(message, @"Batch\s+(?<index>\d+)/(?<total>\d+)", RegexOptions.IgnoreCase);
+                        if (batchMatch.Success
+                            && int.TryParse(batchMatch.Groups["index"].Value, out int batchIndex)
+                            && batchIndex >= progressBar.Minimum
+                            && batchIndex <= progressBar.Maximum)
+                        {
+                            progressBar.Value = batchIndex;
+                        }
+                    }));
+                });
+
+            Deck deck = await ParseDeck(deckInputTextBox.Text, commanderTextBox.Text);
+            RenderResults(deck, results, simulationsPerBatch, maxTurns, onDraw);
+            progressLabel.Text = $"Training complete. Learned games: {results.LearningGamesSeen}";
+        }
+        catch (Exception ex)
+        {
+            resultsTextBox.Clear();
+            resultsTextBox.SelectionColor = Color.Red;
+            resultsTextBox.AppendText($"Training error: {ex.Message}");
+            progressLabel.Text = "Training failed.";
+        }
+        finally
+        {
+            progressBar.Maximum = 1000;
+            progressBar.Value = 0;
+            SetActionButtonsEnabled(true);
+        }
+    }
+
+    private void SetActionButtonsEnabled(bool enabled)
+    {
+        evaluateButton.Enabled = enabled;
+        trainButton.Enabled = enabled;
+        importMoxfieldButton.Enabled = enabled;
+        saveReportButton.Enabled = enabled;
     }
 
     private void RenderResults(Deck deck, EvaluationResults results, int numSimulations, int maxTurns, bool onDraw)
@@ -1031,10 +1428,13 @@ public class DeckEvaluatorForm : Form
             resultsTextBox.AppendText($"⚠ {missingCardNames.Count} card(s) not in local DB — resolved via Scryfall or defaults: {string.Join(", ", missingCardNames.Take(6))}{(missingCardNames.Count > 6 ? "…" : string.Empty)}\n");
         }
 
-        Body($"Simulation: AI Goldfish Bot — mulligans, tutor targets, draw sequencing, reactive spell restraint | On the draw: {(onDraw ? "Yes" : "No")}");
+        Body($"Simulation: AI Goldfish Bot — mulligans, tutor targets, draw sequencing, reactive spell restraint, turn-sequence planning | On the draw: {(onDraw ? "Yes" : "No")}");
+        Body($"Archetype model: {results.SelectedArchetype}");
+        if (results.DetectedArchetype != results.SelectedArchetype)
+            Body($"Auto-detected archetype: {results.DetectedArchetype}");
 
         int landCount = deck.LandCount;
-        int nonLandCount = deck.Cards.Count - landCount;
+        int nonLandCount = deck.Cards.Count(card => !card.IsLand && !card.IsCommander);
 
         Header("Summary");
         Body($"Cards: {deck.Cards.Count} | Lands: {landCount} ({(landCount * 100.0 / deck.Cards.Count):F1}%) | Spells: {nonLandCount} ({(nonLandCount * 100.0 / deck.Cards.Count):F1}%)");
@@ -1042,6 +1442,15 @@ public class DeckEvaluatorForm : Form
         Body($"Avg spells cast/game: {results.AverageSpellsCast:F1} ({results.AverageSpellsCast / maxTurns:F2}/turn) | Peak mana: {results.AveragePeakMana:F1}");
         Body($"Opening hand: {results.AverageOpeningHandLands:F2} avg lands | Brick (0-land): {results.BrickHandPercent:F1}% | Flood (5+): {results.FloodHandPercent:F1}% | Mulligans: {results.AverageMulligans:F2}");
         Body($"Mana efficiency: {results.AverageManaEfficiency:F1}% | Early actions by T3: {results.AverageEarlyTurnActions:F2} | Stranded 5+ drops: {results.AverageStrandedHighCostCards:F2}");
+        if (deck.Commander != null)
+            Body($"Commander cast rate: {results.CommanderCastRate:F1}% | Average commander cast turn: {(results.AverageCommanderCastTurn > 0 ? $"T{results.AverageCommanderCastTurn:F2}" : "not cast")}");
+
+        Header("Power Review");
+        Body($"Estimated power level: {results.EstimatedPowerLevel:F1}/10");
+        Body($"Estimated commander bracket: {results.EstimatedBracket}");
+        Body(results.PowerSummary);
+        foreach (var signal in results.PowerSignals.Take(5))
+            Body($"- {signal}");
 
         var manaCurve = deck.GetManaCurve();
         Header("Mana Curve");
@@ -1186,6 +1595,11 @@ public class DeckEvaluatorForm : Form
             _ = AppendEdhrecSuggestionsAsync(deck);
     }
 
+    private DeckArchetype? GetSelectedArchetypeOverride()
+    {
+        return archetypeComboBox.SelectedItem is DeckArchetype archetype ? archetype : null;
+    }
+
     private async Task AppendEdhrecSuggestionsAsync(Deck deck)
     {
         var suggestions = await GetEdhrecSuggestionsAsync(commanderTextBox.Text.Trim(), deck);
@@ -1289,15 +1703,13 @@ public class DeckEvaluatorForm : Form
         var quantities = new List<int>();
         foreach (var line in lines)
         {
-            var trimmed = line.Trim();
-            if (trimmed.Length == 0)
+            if (ShouldIgnoreDeckLine(line))
                 continue;
 
-            var parts = trimmed.Split(new[] { ' ' }, 2);
-            if (parts.Length < 2 || !int.TryParse(parts[0], out int quantity))
-                throw new FormatException($"Invalid line: {trimmed}");
+            if (!TryParseDeckEntry(line, out string parsedName, out int quantity))
+                throw new FormatException($"Invalid line: {line.Trim()}");
 
-            cardNames.Add(parts[1].Trim());
+            cardNames.Add(parsedName);
             quantities.Add(quantity);
         }
 
@@ -1320,15 +1732,14 @@ public class DeckEvaluatorForm : Form
                 colors = commanderData.Value.colors;
                 type = commanderData.Value.type;
                 oracleText = commanderData.Value.oracleText;
-                isLand = cardDatabase.TryGetValue(commanderName, out var commanderRecord)
-                    ? commanderRecord.IsLand
-                    : type.IndexOf("land", StringComparison.OrdinalIgnoreCase) >= 0;
+                isLand = FindCardRecord(commanderName)?.IsLand ?? type.IndexOf("land", StringComparison.OrdinalIgnoreCase) >= 0;
             }
 
             var commanderCard = new Card
             {
                 Name = commanderName,
                 IsLand = isLand,
+                IsCommander = true,
                 ManaCost = manaCost,
                 Colors = colors,
                 Type = type,
@@ -1359,9 +1770,7 @@ public class DeckEvaluatorForm : Form
                 type = cardEntry.Value.type;
                 category = cardEntry.Value.category;
                 oracleText = cardEntry.Value.oracleText;
-                isLand = cardDatabase.TryGetValue(cardName.Trim(), out var record)
-                    ? record.IsLand
-                    : type.IndexOf("land", StringComparison.OrdinalIgnoreCase) >= 0;
+                isLand = FindCardRecord(cardName)?.IsLand ?? type.IndexOf("land", StringComparison.OrdinalIgnoreCase) >= 0;
             }
             else
             {
@@ -1395,13 +1804,107 @@ public class DeckEvaluatorForm : Form
         if (string.IsNullOrWhiteSpace(name))
             return Task.FromResult<(int, List<string>, string, string, string)?>((0, new List<string>(), string.Empty, "Unknown", string.Empty));
 
-        if (cardDatabase.TryGetValue(name.Trim(), out var record))
+        var record = FindCardRecord(name);
+        if (record != null)
             return Task.FromResult<(int, List<string>, string, string, string)?>((record.ManaCost, record.Colors, record.Type, record.Category, record.OracleText));
 
-        var match = cardDatabase.Values.FirstOrDefault(card => string.Equals(card.Name, name.Trim(), StringComparison.OrdinalIgnoreCase));
-        if (match != null)
-            return Task.FromResult<(int, List<string>, string, string, string)?>((match.ManaCost, match.Colors, match.Type, match.Category, match.OracleText));
-
         return Task.FromResult<(int, List<string>, string, string, string)?>((0, new List<string>(), "Unknown", "Unknown", string.Empty));
+    }
+
+    public async Task<EvaluationResults> RunHeadlessTrainingAsync(
+        string deckText,
+        string commanderText,
+        int simulationsPerBatch,
+        int maxTurns,
+        int batches,
+        bool onDraw,
+        Action<string>? log = null)
+    {
+        if (string.IsNullOrWhiteSpace(deckText))
+            throw new InvalidOperationException("Deck text is required for training.");
+
+        if (simulationsPerBatch <= 0)
+            throw new InvalidOperationException("Simulations per batch must be greater than 0.");
+
+        if (batches <= 0)
+            throw new InvalidOperationException("Batches must be greater than 0.");
+
+        var rawInputLines = deckText.Split(new[] { '\r', '\n' }, StringSplitOptions.RemoveEmptyEntries);
+        var prefetchNames = rawInputLines
+            .Select(line => TryParseDeckEntry(line, out string parsedName, out _) ? parsedName : string.Empty)
+            .Where(name => name.Length > 0)
+            .ToList();
+        if (!string.IsNullOrWhiteSpace(commanderText))
+            prefetchNames.Add(NormalizeDeckCardName(commanderText));
+
+        log?.Invoke($"Prefetching data for {prefetchNames.Count} deck entries...");
+        await PrefetchMissingCardsAsync(prefetchNames);
+
+        Deck deck = await ParseDeck(deckText, commanderText);
+        if (deck.Cards.Count == 0)
+            throw new InvalidOperationException("No cards found after parsing deck text.");
+
+        EvaluationResults? latest = null;
+        for (int batch = 1; batch <= batches; batch++)
+        {
+            var evaluator = new DeckEvaluator(deck, GetSelectedArchetypeOverride());
+            latest = await Task.Run(() => evaluator.RunSimulations(simulationsPerBatch, maxTurns, onDraw));
+
+            log?.Invoke(
+                $"Batch {batch}/{batches} complete | Idle {latest.AverageIdleTurns:F2} | ManaEff {latest.AverageManaEfficiency:F1}% | CmdrCast {latest.CommanderCastRate:F1}% | LearnedGames {latest.LearningGamesSeen}");
+        }
+
+        return latest ?? throw new InvalidOperationException("Training run did not produce results.");
+    }
+
+    private static bool ShouldIgnoreDeckLine(string line)
+    {
+        if (string.IsNullOrWhiteSpace(line))
+            return true;
+
+        string trimmed = line.Trim();
+        if (trimmed.Length == 0)
+            return true;
+        if (trimmed.StartsWith("#") || trimmed.StartsWith("//"))
+            return true;
+
+        string lowered = trimmed.ToLowerInvariant();
+        return lowered is "commander" or "commander:" or "deck" or "deck:" or "mainboard" or "mainboard:" or "sideboard" or "sideboard:" or "maybeboard" or "maybeboard:" or "considering" or "considering:";
+    }
+
+    private static bool TryParseDeckEntry(string line, out string cardName, out int quantity)
+    {
+        cardName = string.Empty;
+        quantity = 0;
+        if (string.IsNullOrWhiteSpace(line))
+            return false;
+
+        string trimmed = line.Trim();
+        if (ShouldIgnoreDeckLine(trimmed))
+            return false;
+
+        var leading = Regex.Match(trimmed, @"^(?<qty>\d+)\s*(x)?\s+(?<name>.+)$", RegexOptions.IgnoreCase);
+        if (leading.Success)
+        {
+            quantity = Math.Max(1, int.Parse(leading.Groups["qty"].Value));
+            cardName = NormalizeDeckCardName(leading.Groups["name"].Value);
+            return cardName.Length > 0;
+        }
+
+        var trailing = Regex.Match(trimmed, @"^(?<name>.+?)\s+[xX](?<qty>\d+)$", RegexOptions.IgnoreCase);
+        if (trailing.Success)
+        {
+            quantity = Math.Max(1, int.Parse(trailing.Groups["qty"].Value));
+            cardName = NormalizeDeckCardName(trailing.Groups["name"].Value);
+            return cardName.Length > 0;
+        }
+
+        string inferred = NormalizeDeckCardName(trimmed);
+        if (inferred.Length == 0)
+            return false;
+
+        quantity = 1;
+        cardName = inferred;
+        return true;
     }
 }

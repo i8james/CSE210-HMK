@@ -9,4 +9,9 @@
     <UseWindowsForms>true</UseWindowsForms>
   </PropertyGroup>
 
+  <PropertyGroup Condition="'$(Configuration)' == 'Debug'">
+    <UseAppHost>false</UseAppHost>
+    <BaseOutputPath>bin_locksafe\</BaseOutputPath>
+  </PropertyGroup>
+
 </Project>
