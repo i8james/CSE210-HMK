@@ -1520,35 +1520,185 @@ public class DeckEvaluator
                 .ToList();
         }
 
-        List<string> GetTopHeavyCuts(int minManaCost = 5)
+        static string DescribeTag(string roleTag)
         {
-            return deck.Cards
-                .Where(card => !card.IsLand && !card.IsCommander && !string.IsNullOrWhiteSpace(card.Name) && card.ManaCost >= minManaCost)
-                .OrderByDescending(card => card.ManaCost)
-                .ThenBy(card => card.Name)
-                .Select(card => card.Name!.Trim())
-                .Distinct(StringComparer.OrdinalIgnoreCase)
-                .Take(5)
-                .ToList();
+            return roleTag.Equals("Card Draw", StringComparison.OrdinalIgnoreCase)
+                ? "card draw"
+                : roleTag.Equals("Board Wipe", StringComparison.OrdinalIgnoreCase)
+                    ? "board wipes"
+                    : roleTag.Equals("Token Generation", StringComparison.OrdinalIgnoreCase)
+                        ? "token makers"
+                        : roleTag.ToLowerInvariant();
         }
 
-        List<string> GetLowImpactCutsByTag(string tag)
+        int GetTargetMinForRole(string roleTag)
         {
-            return deck.Cards
-                .Where(card => !card.IsLand && !card.IsCommander && DeckAnalysis.GetCategoryTags(card).Contains(tag) && !string.IsNullOrWhiteSpace(card.Name))
-                .OrderByDescending(card => card.ManaCost)
-                .ThenBy(card => card.Name)
-                .Select(card => card.Name!.Trim())
-                .Distinct(StringComparer.OrdinalIgnoreCase)
-                .Take(5)
-                .ToList();
-        }
-
-            (List<string> Names, Dictionary<string, string> Reasons) GetRecommendedLands(int count)
+            return roleTag switch
             {
-                var lands = LandRecommendationEngine.RecommendAdds(deck, Math.Max(1, count));
-                return (lands.Select(land => land.Name).ToList(), LandRecommendationEngine.BuildAddReasons(lands));
-            }
+                "Ramp" => targets.RampMin,
+                "Card Draw" => targets.DrawMin,
+                "Removal" => Math.Max(4, targets.InteractionMin - 4),
+                "Counterspell" => Math.Max(2, targets.InteractionMin / 3),
+                "Tutor" => targets.TutorMin,
+                "Board Wipe" => Math.Max(2, targets.InteractionMin / 4),
+                "Token Generation" => archetype == DeckArchetype.Tokens ? 7 : 3,
+                _ => 0
+            };
+        }
+
+        int GetCurrentRoleCount(string roleTag)
+        {
+            return DeckAnalysis.CountRoleCards(deck, roleTag);
+        }
+
+        int GetRoleNeedScore(string roleTag)
+        {
+            int score = Math.Max(0, GetTargetMinForRole(roleTag) - GetCurrentRoleCount(roleTag)) * 10;
+            if (roleTag.Equals("Ramp", StringComparison.OrdinalIgnoreCase) && results.CommanderCastRate < 65)
+                score += 4;
+            if (roleTag.Equals("Card Draw", StringComparison.OrdinalIgnoreCase) && results.AverageManaEfficiency < 55)
+                score += 3;
+            if (roleTag.Equals("Removal", StringComparison.OrdinalIgnoreCase) && _isCedh)
+                score += 2;
+            if (roleTag.Equals("Counterspell", StringComparison.OrdinalIgnoreCase) && archetype == DeckArchetype.Spellslinger)
+                score += 2;
+            return score;
+        }
+
+        List<string> GetRolePriorityOrder()
+        {
+            return archetype switch
+            {
+                DeckArchetype.Spellslinger => new List<string> { "Card Draw", "Counterspell", "Removal", "Ramp", "Tutor", "Board Wipe", "Token Generation" },
+                DeckArchetype.Combo => new List<string> { "Tutor", "Card Draw", "Counterspell", "Ramp", "Removal", "Board Wipe", "Token Generation" },
+                DeckArchetype.Tokens => new List<string> { "Token Generation", "Card Draw", "Ramp", "Removal", "Board Wipe", "Protection" },
+                DeckArchetype.Tribal => new List<string> { "Card Draw", "Ramp", "Removal", "Protection", "Board Wipe", "Tutor" },
+                DeckArchetype.Ramp => new List<string> { "Card Draw", "Removal", "Ramp", "Tutor", "Board Wipe", "Counterspell" },
+                _ => new List<string> { "Card Draw", "Removal", "Ramp", "Board Wipe", "Counterspell", "Tutor", "Token Generation" }
+            };
+        }
+
+        string ChooseBestAddRole(params string[] excludedRoles)
+        {
+            var excluded = excludedRoles.ToHashSet(StringComparer.OrdinalIgnoreCase);
+            var priority = GetRolePriorityOrder();
+            var supportedRoles = new[] { "Ramp", "Card Draw", "Removal", "Counterspell", "Board Wipe", "Tutor", "Token Generation" };
+
+            return supportedRoles
+                .Where(role => !excluded.Contains(role))
+                .OrderByDescending(GetRoleNeedScore)
+                .ThenBy(role =>
+                {
+                    int index = priority.FindIndex(item => item.Equals(role, StringComparison.OrdinalIgnoreCase));
+                    return index < 0 ? int.MaxValue : index;
+                })
+                .FirstOrDefault() ?? "Card Draw";
+        }
+
+        (List<string> Names, Dictionary<string, string> Reasons) RankCutCandidates(string incomingRole, int maxResults = 5, int minManaCost = 0, string? preferTrimTag = null)
+        {
+            var ranked = deck.Cards
+                .Where(card => !card.IsLand && !card.IsCommander && !string.IsNullOrWhiteSpace(card.Name))
+                .GroupBy(card => card.Name!.Trim(), StringComparer.OrdinalIgnoreCase)
+                .Select(group => group.First())
+                .Select(card =>
+                {
+                    var tags = DeckAnalysis.GetCategoryTags(card);
+                    double score = card.ManaCost;
+                    var reasons = new List<string>();
+
+                    if (card.ManaCost >= 5)
+                    {
+                        score += 3;
+                        reasons.Add("high mana value");
+                    }
+                    else if (card.ManaCost <= 2)
+                    {
+                        score -= 2;
+                    }
+
+                    if (minManaCost > 0 && card.ManaCost >= minManaCost)
+                    {
+                        score += 2;
+                    }
+
+                    if (!string.IsNullOrWhiteSpace(preferTrimTag) && tags.Contains(preferTrimTag))
+                    {
+                        score += 5;
+                        reasons.Add($"surplus {DescribeTag(preferTrimTag)} slot");
+                    }
+
+                    if (tags.Count == 0)
+                    {
+                        score += 3;
+                        reasons.Add("few recognized functional tags");
+                    }
+
+                    if (!string.IsNullOrWhiteSpace(incomingRole) && tags.Contains(incomingRole))
+                    {
+                        score -= 6;
+                    }
+
+                    if (tags.Contains("Tutor"))
+                        score -= 3;
+                    if (tags.Contains("Card Draw"))
+                        score -= 1.5;
+                    if (tags.Contains("Ramp"))
+                        score -= 1.5;
+                    if (tags.Contains("Removal"))
+                        score -= 1.25;
+                    if (tags.Contains("Counterspell"))
+                        score -= 1.25;
+
+                    switch (archetype)
+                    {
+                        case DeckArchetype.Spellslinger:
+                            if (DeckAnalysis.HasType(card, "Creature") && !tags.Contains("Token Generation"))
+                            {
+                                score += 2.5;
+                                reasons.Add("less aligned with spellslinger plan");
+                            }
+                            if (DeckAnalysis.HasType(card, "Instant") || DeckAnalysis.HasType(card, "Sorcery"))
+                                score -= 2;
+                            break;
+                        case DeckArchetype.Combo:
+                            if (!tags.Contains("Tutor") && !tags.Contains("Card Draw") && !tags.Contains("Ramp") && !tags.Contains("Counterspell"))
+                            {
+                                score += 2;
+                                reasons.Add("does not strongly advance combo assembly");
+                            }
+                            break;
+                        case DeckArchetype.Tribal:
+                            if (!DeckAnalysis.HasType(card, "Creature"))
+                                score += 1.5;
+                            break;
+                        case DeckArchetype.Tokens:
+                            if (!tags.Contains("Token Generation") && !tags.Contains("Protection"))
+                                score += 1.5;
+                            break;
+                    }
+
+                    string reason = reasons.Count > 0
+                        ? string.Join(", ", reasons.Distinct(StringComparer.OrdinalIgnoreCase).Take(2))
+                        : "lower-priority slot relative to the current plan";
+
+                    return new { Name = card.Name!.Trim(), Score = score, Reason = reason };
+                })
+                .OrderByDescending(entry => entry.Score)
+                .ThenBy(entry => entry.Name)
+                .Take(maxResults)
+                .ToList();
+
+            return (
+                ranked.Select(entry => entry.Name).ToList(),
+                ranked.ToDictionary(entry => entry.Name, entry => entry.Reason, StringComparer.OrdinalIgnoreCase));
+        }
+
+        (List<string> Names, Dictionary<string, string> Reasons) GetRecommendedLands(int count)
+        {
+            var lands = LandRecommendationEngine.RecommendAdds(deck, Math.Max(1, count));
+            return (lands.Select(land => land.Name).ToList(), LandRecommendationEngine.BuildAddReasons(lands));
+        }
 
         results.Recommendations.Add("\n=== MANA & LAND ANALYSIS ===");
         results.Recommendations.Add($"Deck archetype model: {archetype}");
@@ -1562,6 +1712,7 @@ public class DeckEvaluator
         if (results.AverageMissedLands > 2)
         {
             var landAdds = GetRecommendedLands((int)Math.Max(2, Math.Ceiling(results.AverageMissedLands)));
+            var cuts = RankCutCandidates("Land", 5, minManaCost: 5);
             results.Recommendations.Add($"🚨 HIGH PRIORITY: Avg {results.AverageMissedLands:F2} missed land drops. Add {Math.Ceiling(results.AverageMissedLands)} more lands (currently {landCount} / {landPercentage:F1}%)");
             AddSuggestion(
                 DeckSuggestionKind.Add,
@@ -1570,12 +1721,14 @@ public class DeckEvaluator
                 0.95,
                 roleTag: "Land",
                 adds: landAdds.Names,
-                cuts: GetTopHeavyCuts(),
-                addReasons: landAdds.Reasons);
+                cuts: cuts.Names,
+                addReasons: landAdds.Reasons,
+                cutReasons: cuts.Reasons);
         }
         else if (landCount < targets.LandsMin)
         {
             var landAdds = GetRecommendedLands(Math.Max(2, targets.LandsMin - landCount));
+            var cuts = RankCutCandidates("Land", 5, minManaCost: 4);
             results.Recommendations.Add($"⚠️  Land count is low for a {archetype} shell: {landCount} lands vs target {targets.LandsMin}-{targets.LandsMax}.");
             AddSuggestion(
                 DeckSuggestionKind.Swap,
@@ -1584,19 +1737,25 @@ public class DeckEvaluator
                 0.86,
                 roleTag: "Land",
                 adds: landAdds.Names,
-                cuts: GetTopHeavyCuts(),
-                addReasons: landAdds.Reasons);
+                cuts: cuts.Names,
+                addReasons: landAdds.Reasons,
+                cutReasons: cuts.Reasons);
         }
         else if (landCount > targets.LandsMax && results.AverageMissedLands < 0.5)
         {
+            string addRole = ChooseBestAddRole();
             results.Recommendations.Add($"💡 Land count is high for a {archetype} shell: {landCount} lands vs target {targets.LandsMin}-{targets.LandsMax}. You can likely convert a few lands into action spells.");
             AddSuggestion(
                 DeckSuggestionKind.Swap,
                 "Cash in excess lands for action",
                 "The mana base looks comfortable already, so some extra lands can become cards that advance your core plan.",
                 0.74,
-                roleTag: "Card Draw",
-                cuts: new[] { "1-2 lands" });
+                roleTag: addRole,
+                cuts: new[] { "1-2 lands" },
+                cutReasons: new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
+                {
+                    ["1-2 lands"] = "Land count is above the target range and goldfishing is not missing land drops."
+                });
         }
         else if (results.AverageMissedLands < 0.2)
             results.Recommendations.Add($"💡 Excess lands: Avg {results.AverageMissedLands:F2} missed drops suggests {landCount - 2}-{landCount - 4} lands might work better");
@@ -1628,14 +1787,17 @@ public class DeckEvaluator
 
         if (highCost > lowCost * 1.5)
         {
+            string addRole = ChooseBestAddRole("Land");
+            var cuts = RankCutCandidates(addRole, 5, minManaCost: 5);
             results.Recommendations.Add($"📊 Top-heavy curve detected. Add {Math.Ceiling((highCost - lowCost) / 2.0)} low-cost spells.");
             AddSuggestion(
                 DeckSuggestionKind.Swap,
                 "Lower the curve",
                 "The deck is carrying more expensive cards than its early-game infrastructure supports. Replace some of the top end with cheap setup pieces.",
                 0.89,
-                roleTag: "Ramp",
-                cuts: GetTopHeavyCuts());
+                roleTag: addRole,
+                cuts: cuts.Names,
+                cutReasons: cuts.Reasons);
         }
         else if (lowCost > highCost * 2)
             results.Recommendations.Add($"📊 Consider adding {Math.Ceiling((lowCost - highCost) / 3.0)} higher-cost finishers.");
@@ -1691,6 +1853,7 @@ public class DeckEvaluator
         results.Recommendations.Add($"Removal: {removalCount} (target {removalMin}-{removalMax})");
         if (removalCount < removalMin)
         {
+            var cuts = RankCutCandidates("Removal", 5, minManaCost: 4);
             results.Recommendations.Add($"⚠️  Run more removal: add ~{removalMin - removalCount} to {removalMin - removalCount + 2} pieces of interaction. Current removal cards: {FormatNameList(GetTopNamesByTag("Removal"))}");
             AddSuggestion(
                 DeckSuggestionKind.Add,
@@ -1698,18 +1861,22 @@ public class DeckEvaluator
                 "You are below the interaction floor, so the deck will struggle to answer opposing threats consistently.",
                 0.84,
                 roleTag: "Removal",
-                cuts: GetTopHeavyCuts());
+                cuts: cuts.Names,
+                cutReasons: cuts.Reasons);
         }
         else if (removalCount > removalMax)
         {
+            string addRole = ChooseBestAddRole("Removal");
+            var cuts = RankCutCandidates(addRole, 5, preferTrimTag: "Removal");
             results.Recommendations.Add($"💡 Removal is high: you can trim ~{Math.Max(1, removalCount - removalMax)} for proactive threats/synergy. Trim candidates: {FormatNameList(GetTrimCandidatesByTag("Removal"))}");
             AddSuggestion(
                 DeckSuggestionKind.Swap,
                 "Trim excess removal",
                 "Your removal package is heavier than the target band, so some of those slots can become synergy or pressure.",
                 0.72,
-                roleTag: "Token Generation",
-                cuts: GetLowImpactCutsByTag("Removal"));
+                roleTag: addRole,
+                cuts: cuts.Names,
+                cutReasons: cuts.Reasons);
         }
         else
             results.Recommendations.Add($"✓ Removal count is in a strong range (cards: {FormatNameList(GetTopNamesByTag("Removal"))}).");
@@ -1717,6 +1884,7 @@ public class DeckEvaluator
         results.Recommendations.Add($"Card Draw: {drawCount} (target {drawMin}-{drawMax})");
         if (drawCount < drawMin)
         {
+            var cuts = RankCutCandidates("Card Draw", 5, minManaCost: 4);
             results.Recommendations.Add($"⚠️  Add card draw: include ~{drawMin - drawCount} to {drawMin - drawCount + 2} more repeatable draw effects. Current draw cards: {FormatNameList(GetTopNamesByTag("Card Draw"))}");
             AddSuggestion(
                 DeckSuggestionKind.Add,
@@ -1724,18 +1892,22 @@ public class DeckEvaluator
                 "The list needs more sustained access to cards so it can keep converting mana into action.",
                 0.82,
                 roleTag: "Card Draw",
-                cuts: GetTopHeavyCuts());
+                cuts: cuts.Names,
+                cutReasons: cuts.Reasons);
         }
         else if (drawCount > drawMax)
         {
+            string addRole = ChooseBestAddRole("Card Draw");
+            var cuts = RankCutCandidates(addRole, 5, preferTrimTag: "Card Draw");
             results.Recommendations.Add($"💡 Draw is high: trim ~{Math.Max(1, drawCount - drawMax)} draw spells if the deck feels low on board impact. Trim candidates: {FormatNameList(GetTrimCandidatesByTag("Card Draw"))}");
             AddSuggestion(
                 DeckSuggestionKind.Swap,
                 "Trade excess draw for impact",
                 "You have enough draw already; some of those slots can become cards that pressure the board or reinforce the deck's plan.",
                 0.67,
-                roleTag: "Removal",
-                cuts: GetLowImpactCutsByTag("Card Draw"));
+                roleTag: addRole,
+                cuts: cuts.Names,
+                cutReasons: cuts.Reasons);
         }
         else
             results.Recommendations.Add($"✓ Card draw count looks healthy (cards: {FormatNameList(GetTopNamesByTag("Card Draw"))}).");
@@ -1754,6 +1926,7 @@ public class DeckEvaluator
         int rampMax = targets.RampMax;
         if (rampCount < rampMin)
         {
+            var cuts = RankCutCandidates("Ramp", 5, minManaCost: 4);
             results.Recommendations.Add($"⚠️  Ramp is low ({rampCount} / target {rampMin}-{rampMax}): add ~{rampMin - rampCount} mana accelerators. Current ramp: {FormatNameList(GetTopNamesByTag("Ramp"))}");
             AddSuggestion(
                 DeckSuggestionKind.Add,
@@ -1761,18 +1934,22 @@ public class DeckEvaluator
                 "The deck is short on acceleration, which is hurting both commander timing and overall mana efficiency.",
                 0.88,
                 roleTag: "Ramp",
-                cuts: GetTopHeavyCuts());
+                cuts: cuts.Names,
+                cutReasons: cuts.Reasons);
         }
         else if (rampCount > rampMax)
         {
+            string addRole = ChooseBestAddRole("Ramp");
+            var cuts = RankCutCandidates(addRole, 5, preferTrimTag: "Ramp");
             results.Recommendations.Add($"💡 Ramp is high ({rampCount}): trim ~{Math.Max(1, rampCount - rampMax)} for more threats. Trim candidates: {FormatNameList(GetTrimCandidatesByTag("Ramp"))}");
             AddSuggestion(
                 DeckSuggestionKind.Swap,
                 "Trim extra ramp for payoffs",
                 "The deck has enough acceleration already, so a few ramp slots can turn into stronger payoffs or interaction.",
                 0.69,
-                roleTag: "Card Draw",
-                cuts: GetLowImpactCutsByTag("Ramp"));
+                roleTag: addRole,
+                cuts: cuts.Names,
+                cutReasons: cuts.Reasons);
         }
         else
             results.Recommendations.Add($"✓ Ramp is healthy ({rampCount} / target {rampMin}-{rampMax}): {FormatNameList(GetTopNamesByTag("Ramp"))}");
@@ -1823,14 +2000,17 @@ public class DeckEvaluator
 
         if (results.AverageIdleTurns > 2)
         {
+            string addRole = ChooseBestAddRole("Land");
+            var cuts = RankCutCandidates(addRole, 5, minManaCost: 4);
             results.Recommendations.Add("⚠️  Too many idle turns. Consider adding more low-cost cards or mana acceleration.");
             AddSuggestion(
                 DeckSuggestionKind.Swap,
                 "Reduce idle turns",
                 "Goldfish lines are stalling too often. Lower-cost ramp, draw, and removal should make more turns productive.",
                 0.85,
-                roleTag: "Ramp",
-                cuts: GetTopHeavyCuts());
+                roleTag: addRole,
+                cuts: cuts.Names,
+                cutReasons: cuts.Reasons);
         }
         else if (results.AverageIdleTurns < 0.5)
             results.Recommendations.Add("✓ Excellent consistency - plenty to play each turn!");
@@ -1847,14 +2027,17 @@ public class DeckEvaluator
 
         if (results.AverageStrandedHighCostCards > 2.0)
         {
+            string addRole = ChooseBestAddRole("Land");
+            var cuts = RankCutCandidates(addRole, 5, minManaCost: 5);
             results.Recommendations.Add($"💡 Expensive cards are getting stranded in hand. Trim a few 5+ mana spells or add more ramp. Likely trim candidates: {FormatNameList(deck.Cards.Where(card => !card.IsLand && card.ManaCost >= 5).OrderByDescending(card => card.ManaCost).Select(card => card.Name ?? string.Empty))}");
             AddSuggestion(
                 DeckSuggestionKind.Swap,
                 "Swap stranded top-end cards",
                 "Several expensive cards are staying stuck in hand, which usually means the curve and ramp package are out of sync.",
                 0.9,
-                roleTag: "Ramp",
-                cuts: GetTopHeavyCuts());
+                roleTag: addRole,
+                cuts: cuts.Names,
+                cutReasons: cuts.Reasons);
         }
 
         if (deck.Commander != null && results.CommanderCastRate < 65)
