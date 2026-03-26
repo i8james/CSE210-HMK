@@ -9,6 +9,7 @@ internal sealed class CardDbRecord
     public string Name { get; set; } = string.Empty;
     public int ManaCost { get; set; }
     public List<string> Colors { get; set; } = new List<string>();
+    public List<string> ColorIdentity { get; set; } = new List<string>();
     public string Type { get; set; } = string.Empty;
     public string Category { get; set; } = string.Empty;
     public bool IsLand { get; set; }
@@ -22,6 +23,8 @@ public class Card
     public bool IsCommander { get; set; }
     public int ManaCost { get; set; }
     public List<string> Colors { get; set; } = new List<string>();
+    /// <summary>True color identity (W/U/B/R/G) including activated ability symbols. Used for legality filtering.</summary>
+    public List<string> ColorIdentity { get; set; } = new List<string>();
     public string? Type { get; set; }
     public string? Category { get; set; }
     public string? OracleText { get; set; }
@@ -31,6 +34,7 @@ public class Deck
 {
     public List<Card> Cards { get; } = new List<Card>();
     public Card? Commander { get; private set; }
+    internal SpellbookComboReport? SpellbookReport { get; set; }
 
     public void AddCard(Card card)
     {
@@ -54,6 +58,28 @@ public class Deck
     }
 
     public int LandCount => Cards.Count(card => card.IsLand);
+
+    /// <summary>Returns a set of color codes (W/U/B/R/G) representing the commander's color identity.
+    /// Falls back to the commander's mana cost colors if no explicit color identity was loaded.</summary>
+    public HashSet<string> GetCommanderColorIdentity()
+    {
+        if (Commander == null)
+            return new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        var identity = Commander.ColorIdentity.Count > 0 ? Commander.ColorIdentity : Commander.Colors;
+        return new HashSet<string>(identity, StringComparer.OrdinalIgnoreCase);
+    }
+
+    /// <summary>Returns true when the given card record is legal in the commander's color identity.
+    /// Colorless cards (empty Colors) are always legal.</summary>
+    internal bool IsInColorIdentity(CardDbRecord record)
+    {
+        if (record.Colors.Count == 0)
+            return true; // colorless artifacts, lands, etc.
+        var identity = GetCommanderColorIdentity();
+        if (identity.Count == 0)
+            return true; // no commander or identity unknown — allow anything
+        return record.Colors.All(c => identity.Contains(c));
+    }
 
     public Dictionary<int, int> GetManaCurve()
     {
@@ -94,6 +120,12 @@ public class SimulationResult
     public int StrandedHighCostCards { get; set; }
     public int CommanderCastTurn { get; set; }
     public bool CommanderCast { get; set; }
+    public bool WonViaInfiniteCombo { get; set; }
+    public string ComboLine { get; set; } = string.Empty;
+    public int ActivatedAbilitiesUsed { get; set; }
+    public int TriggeredAbilitiesResolved { get; set; }
+    public List<string> ActionLog { get; set; } = new List<string>();
+    public List<string> SpellbookComboAssemblies { get; set; } = new List<string>();
 }
 
 public class EvaluationResults
@@ -121,7 +153,39 @@ public class EvaluationResults
     public double AverageStrandedHighCostCards { get; set; }
     public double AverageCommanderCastTurn { get; set; }
     public double CommanderCastRate { get; set; }
+    public double InfiniteComboWinRate { get; set; }
+    public double AverageActivatedAbilitiesUsed { get; set; }
+    public double AverageTriggeredAbilitiesResolved { get; set; }
+    public List<string> ComboLines { get; set; } = new List<string>();
+    public List<string> SpellbookKnownCombos { get; set; } = new List<string>();
+    public List<string> SpellbookAlmostCombos { get; set; } = new List<string>();
+    public List<string> SpellbookComboAssemblies { get; set; } = new List<string>();
+    public double SpellbookComboAssemblyRate { get; set; }
+    public List<string> SamplePlayPatterns { get; set; } = new List<string>();
     public int LearningGamesSeen { get; set; }
     public bool IsCedh { get; set; }
     public List<string> Recommendations { get; set; } = new List<string>();
+    public List<DeckSuggestion> Suggestions { get; set; } = new List<DeckSuggestion>();
+}
+
+public enum DeckSuggestionKind
+{
+    Add,
+    Cut,
+    Swap,
+    Info
+}
+
+public class DeckSuggestion
+{
+    public DeckSuggestionKind Kind { get; set; }
+    public string Title { get; set; } = string.Empty;
+    public string Details { get; set; } = string.Empty;
+    public string RoleTag { get; set; } = string.Empty;
+    public string Source { get; set; } = string.Empty;
+    public double Confidence { get; set; }
+    public List<string> SuggestedAdds { get; set; } = new List<string>();
+    public List<string> SuggestedCuts { get; set; } = new List<string>();
+    public Dictionary<string, string> AddReasons { get; set; } = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+    public Dictionary<string, string> CutReasons { get; set; } = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
 }

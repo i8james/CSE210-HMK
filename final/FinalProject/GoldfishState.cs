@@ -15,6 +15,7 @@ internal enum GoldfishActionType
     PlayLand,
     CastSpell,
     CastCommander,
+    ActivateAbility,
     PassPhase
 }
 
@@ -45,8 +46,17 @@ internal sealed class GoldfishGameState
     public int ManaSpent { get; set; }
     public int CardsDrawn { get; set; }
     public int SpellsCast { get; set; }
+    public int ActivatedAbilitiesUsed { get; set; }
+    public int TriggeredAbilitiesResolved { get; set; }
+    public bool InfiniteComboAchieved { get; set; }
+    public string InfiniteComboLine { get; set; } = string.Empty;
+    public List<string> ActionLog { get; }
+    public HashSet<Card> ActivatedThisTurn { get; } = new HashSet<Card>(ReferenceEqualityComparer.Instance);
+    public List<SpellbookComboVariant> KnownCombos { get; }
+    public HashSet<string> AssembledSpellbookComboIds { get; } = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+    public List<string> SpellbookComboAssemblies { get; } = new List<string>();
 
-    public GoldfishGameState(List<Card> library, List<Card> hand, List<Card> battlefield, Card? commander, bool commanderAvailable, int turn, int landsInPlay, int permanentRamp)
+    public GoldfishGameState(List<Card> library, List<Card> hand, List<Card> battlefield, Card? commander, bool commanderAvailable, int turn, int landsInPlay, int permanentRamp, IEnumerable<SpellbookComboVariant>? knownCombos = null)
     {
         Library = new List<Card>(library);
         Hand = new List<Card>(hand);
@@ -60,6 +70,8 @@ internal sealed class GoldfishGameState
         LandsInPlay = landsInPlay;
         PermanentRamp = permanentRamp;
         ManaAvailable = landsInPlay + permanentRamp;
+        ActionLog = new List<string>();
+        KnownCombos = knownCombos?.ToList() ?? new List<SpellbookComboVariant>();
     }
 
     private GoldfishGameState(GoldfishGameState other)
@@ -81,6 +93,17 @@ internal sealed class GoldfishGameState
         ManaSpent = other.ManaSpent;
         CardsDrawn = other.CardsDrawn;
         SpellsCast = other.SpellsCast;
+        ActivatedAbilitiesUsed = other.ActivatedAbilitiesUsed;
+        TriggeredAbilitiesResolved = other.TriggeredAbilitiesResolved;
+        InfiniteComboAchieved = other.InfiniteComboAchieved;
+        InfiniteComboLine = other.InfiniteComboLine;
+        ActionLog = new List<string>(other.ActionLog);
+        KnownCombos = new List<SpellbookComboVariant>(other.KnownCombos);
+        SpellbookComboAssemblies = new List<string>(other.SpellbookComboAssemblies);
+        foreach (var comboId in other.AssembledSpellbookComboIds)
+            AssembledSpellbookComboIds.Add(comboId);
+        foreach (var card in other.ActivatedThisTurn)
+            ActivatedThisTurn.Add(card);
     }
 
     public GoldfishGameState Clone()
@@ -125,6 +148,24 @@ internal static class GoldfishLegalActionGenerator
             });
         }
 
+        foreach (var permanent in state.Battlefield.Where(card => GoldfishAbilityHeuristics.CanActivate(card, state)))
+        {
+                if (state.ActivatedThisTurn.Contains(permanent))
+                    continue;
+
+            int activationCost = GoldfishAbilityHeuristics.GetActivationManaCost(permanent);
+            if (activationCost > state.ManaAvailable)
+                continue;
+
+            actions.Add(new GoldfishAction
+            {
+                Type = GoldfishActionType.ActivateAbility,
+                Card = permanent,
+                ManaCost = activationCost,
+                Description = $"Activate {permanent.Name}"
+            });
+        }
+
         if (state.CommanderAvailable && state.Commander != null)
         {
             int commanderCost = Math.Max(0, state.Commander.ManaCost) + state.CommanderTax;
@@ -142,5 +183,45 @@ internal static class GoldfishLegalActionGenerator
 
         actions.Add(new GoldfishAction { Type = GoldfishActionType.PassPhase, Description = "Pass" });
         return actions;
+    }
+}
+
+internal static class GoldfishAbilityHeuristics
+{
+    public static bool CanActivate(Card card, GoldfishGameState state)
+    {
+        if (card == null || string.IsNullOrWhiteSpace(card.OracleText))
+            return false;
+
+        string oracle = card.OracleText.ToLowerInvariant();
+        if (!oracle.Contains(":") && !oracle.Contains("whenever") && !oracle.Contains("at the beginning"))
+            return false;
+
+            // Note: {t}: add { is intentionally excluded — land/mana-rock mana is already
+            // pre-computed in ManaAvailable = landsInPlay + permanentRamp each turn.
+            // Including it here would cause every mana source to be "re-tapped" for free.
+            if (oracle.Contains("{t}: draw") || oracle.Contains("{t}: create") || oracle.Contains("{t}: proliferate") || oracle.Contains("{t}: untap"))
+            return true;
+
+        if (oracle.Contains("pay ") && (oracle.Contains(": draw") || oracle.Contains(": create") || oracle.Contains(": proliferate") || oracle.Contains(": untap")))
+            return true;
+
+        // Detect search/tutor activated abilities
+        if (oracle.Contains("{t}") && (oracle.Contains("search") || oracle.Contains("fetch")))
+            return true;
+
+        if (oracle.Contains("pay ") && (oracle.Contains("search") || oracle.Contains("fetch")))
+            return true;
+
+        return false;
+    }
+
+    public static int GetActivationManaCost(Card card)
+    {
+        string oracle = (card.OracleText ?? string.Empty).ToLowerInvariant();
+        if (oracle.Contains("{3}")) return 3;
+        if (oracle.Contains("{2}")) return 2;
+        if (oracle.Contains("{1}")) return 1;
+        return 0;
     }
 }

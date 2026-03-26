@@ -44,7 +44,7 @@ internal static class Program
         int turns = GetIntArgValue(args, "--turns", 10);
         bool onDraw = HasFlag(args, "--on-draw");
 
-        Console.WriteLine("Starting headless goldfish training...");
+            Console.WriteLine("Starting Fizban the Fabulous headless goldfish training...");
         Console.WriteLine($"Deck file: {deckPath}");
         Console.WriteLine($"Commander: {(string.IsNullOrWhiteSpace(commander) ? "(none)" : commander)}");
         Console.WriteLine($"Batches: {batches} | Simulations per batch: {simulations} | Turns: {turns} | On draw: {onDraw}");
