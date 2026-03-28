@@ -70,15 +70,16 @@ public class Deck
     }
 
     /// <summary>Returns true when the given card record is legal in the commander's color identity.
-    /// Colorless cards (empty Colors) are always legal.</summary>
+    /// Colorless cards (empty color identity and empty colors) are always legal.</summary>
     internal bool IsInColorIdentity(CardDbRecord record)
     {
-        if (record.Colors.Count == 0)
+        var cardIdentity = record.ColorIdentity.Count > 0 ? record.ColorIdentity : record.Colors;
+        if (cardIdentity.Count == 0)
             return true; // colorless artifacts, lands, etc.
         var identity = GetCommanderColorIdentity();
         if (identity.Count == 0)
             return true; // no commander or identity unknown — allow anything
-        return record.Colors.All(c => identity.Contains(c));
+        return cardIdentity.All(c => identity.Contains(c));
     }
 
     public Dictionary<int, int> GetManaCurve()

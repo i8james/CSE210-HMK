@@ -98,6 +98,11 @@ def get_colors(card: dict) -> str:
     return ";".join(colors)
 
 
+def get_color_identity(card: dict) -> str:
+    identity = card.get("color_identity") or []
+    return ";".join(sorted(set(str(c) for c in identity)))
+
+
 def get_type_line(card: dict) -> str:
     type_line = sanitize(card.get("type_line"))
     if type_line:
@@ -291,7 +296,7 @@ def main() -> None:
 
     with open(csv_path, "w", encoding="utf-8", newline="") as csv_file:
         writer = csv.writer(csv_file, quoting=csv.QUOTE_MINIMAL)
-        writer.writerow(["Name", "ManaCost", "Colors", "Type", "Category", "CardType", "IsLand", "OracleText"])
+        writer.writerow(["Name", "ManaCost", "Colors", "ColorIdentity", "Type", "Category", "CardType", "IsLand", "OracleText"])
 
         rows_written = 0
         skipped_tokens = 0
@@ -323,10 +328,12 @@ def main() -> None:
             colors = get_colors(card)
             mana_value = get_mana_value(card, is_land)
 
+            color_identity = get_color_identity(card)
             writer.writerow([
                 name,
                 f"{mana_value:.1f}",
                 colors,
+                color_identity,
                 type_line,
                 category,
                 card_type,

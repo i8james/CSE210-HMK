@@ -1,0 +1,95 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Fizban Web Portal</title>
+  <link rel="stylesheet" href="fizban-web-portal.css">
+</head>
+<body>
+  <main class="shell">
+    <header class="hero">
+      <p class="kicker">Fizban the Fabulous</p>
+      <h1>Commander Deck Evaluation Portal</h1>
+      <p class="subtitle">Standalone web portal for deck intake, legality checks, and evaluation handoff to the desktop engine.</p>
+    </header>
+
+    <div class="layout">
+      <article class="card intake">
+        <h2>Deck Intake</h2>
+
+        <form action="#" method="post" novalidate>
+          <fieldset>
+            <legend>Deck Setup</legend>
+
+            <label for="commander">Commander</label>
+            <input id="commander" name="commander" type="text" placeholder="The Ur-Dragon">
+
+            <label for="decklist">Decklist (99 cards)</label>
+            <textarea id="decklist" name="decklist" placeholder="1 Sol Ring&#10;1 Arcane Signet&#10;1 Swords to Plowshares"></textarea>
+
+            <div class="row">
+              <div>
+                <label for="simulations">Simulations</label>
+                <select id="simulations" name="simulations">
+                  <option value="10k">10k</option>
+                  <option value="50k" selected>50k</option>
+                  <option value="200k">200k</option>
+                  <option value="500k">500k</option>
+                </select>
+              </div>
+
+              <div>
+                <label for="mode">Mode</label>
+                <select id="mode" name="mode">
+                  <option value="commander" selected>Commander</option>
+                  <option value="cedh">cEDH</option>
+                </select>
+              </div>
+
+              <div>
+                <label for="archetype">Archetype</label>
+                <select id="archetype" name="archetype">
+                  <option value="auto" selected>Auto</option>
+                  <option value="ramp">Ramp</option>
+                  <option value="combo">Combo</option>
+                  <option value="midrange">Midrange</option>
+                  <option value="tokens">Tokens</option>
+                  <option value="spellslinger">Spellslinger</option>
+                  <option value="tribal">Tribal</option>
+                </select>
+              </div>
+            </div>
+
+            <div class="actions">
+              <button class="btn btn-primary" type="submit">Validate Deck</button>
+              <button class="btn btn-secondary" type="button">Queue Evaluation</button>
+            </div>
+          </fieldset>
+        </form>
+
+        <p class="note">This page is intentionally standalone and does not depend on existing portal markup.</p>
+      </article>
+
+      <aside class="card status">
+        <h2>Status</h2>
+        <ul>
+          <li>Commander identity: awaiting input</li>
+          <li>Banlist lookup: idle</li>
+          <li>Deck legality: not started</li>
+          <li>Simulation queue: empty</li>
+        </ul>
+
+        <div class="output" aria-live="polite">Fizban Portal Ready
+- New standalone HTML file
+- New standalone CSS file
+- Styled to match desktop theme</div>
+      </aside>
+    </div>
+
+    <nav class="actions" aria-label="Portal links">
+      <a class="btn btn-secondary" href="final/FinalProject/fizban-portal.html">Open In-Project Portal</a>
+    </nav>
+  </main>
+</body>
+</html>

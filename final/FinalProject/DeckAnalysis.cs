@@ -246,14 +246,119 @@ public static class DeckAnalysis
         return combos;
     }
 
+    /// <summary>Categorizes ramp cards by type for smarter recommendations.</summary>
+    public enum RampType
+    {
+        CreatureRamp,      // Mana-producing creatures (Llanowar Elf, etc.)
+        ArtifactRamp,      // Mana rock artifacts
+        EnchantmentRamp,   // Enchantment-based ramp (Fertile Ground, etc.)
+        SpellRamp          // Sorcery or instant that generates mana
+    }
+
+    /// <summary>Gets the ramp type for a card if it's ramp.</summary>
+    public static RampType? GetRampType(Card card)
+    {
+        if (card.IsLand || !GetCategoryTags(card).Contains("Ramp"))
+            return null;
+
+        if (HasType(card, "Creature"))
+            return RampType.CreatureRamp;
+        else if (HasType(card, "Artifact"))
+            return RampType.ArtifactRamp;
+        else if (HasType(card, "Enchantment"))
+            return RampType.EnchantmentRamp;
+        else if (HasType(card, "Instant") || HasType(card, "Sorcery"))
+            return RampType.SpellRamp;
+        
+        return null;
+    }
+
+    /// <summary>Counts ramp cards by type, excluding lands entirely.</summary>
+    public static Dictionary<RampType, int> GetRampTypeBreakdown(Deck deck)
+    {
+        var breakdown = new Dictionary<RampType, int>
+        {
+            { RampType.CreatureRamp, 0 },
+            { RampType.ArtifactRamp, 0 },
+            { RampType.EnchantmentRamp, 0 },
+            { RampType.SpellRamp, 0 }
+        };
+
+        foreach (var card in deck.Cards.Where(c => !c.IsLand))
+        {
+            var rampType = GetRampType(card);
+            if (rampType.HasValue)
+                breakdown[rampType.Value]++;
+        }
+
+        return breakdown;
+    }
+
+    /// <summary>Returns early ramp (0-2 CMC) cards for when the deck needs fast acceleration.</summary>
+    public static List<Card> GetEarlyRampCards(Deck deck)
+    {
+        return deck.Cards
+            .Where(card => !card.IsLand && card.ManaCost <= 2 && GetCategoryTags(card).Contains("Ramp"))
+            .OrderBy(card => card.ManaCost)
+            .ThenBy(card => card.Name ?? "")
+            .ToList();
+    }
+
     public static bool HasTribe(Card card, string tribe)
     {
         return GetCategoryTags(card).Contains($"Tribe:{tribe}");
     }
 
+    /// <summary>Returns true if this is a basic land (Plains, Island, Swamp, Mountain, Forest, Wastes).</summary>
+    public static bool IsBasicLand(Card card)
+    {
+        if (card?.Type == null)
+            return false;
+        
+        var typeTokens = ExtractTypeTokens(card.Type);
+        if (!typeTokens.Contains("Land", StringComparer.OrdinalIgnoreCase))
+            return false;
+        
+        // Check for basic land types in the type line
+        var basicTypes = new[] { "Plains", "Island", "Swamp", "Mountain", "Forest", "Wastes" };
+        return typeTokens.Any(type => basicTypes.Contains(type, StringComparer.OrdinalIgnoreCase));
+    }
+
+    /// <summary>Returns true if this is a 0-cost artifact that can produce mana (mana rock).</summary>
+    public static bool IsManaRock(Card card)
+    {
+        if (card.ManaCost != 0)
+            return false;
+        
+        if (!HasType(card, "Artifact"))
+            return false;
+        
+        // Check oracle text for mana production
+        if (string.IsNullOrWhiteSpace(card.OracleText))
+            return false;
+        
+        string oracle = card.OracleText.ToLowerInvariant();
+        return oracle.Contains(": add") || oracle.Contains(":add");
+    }
+
+    /// <summary>Counts ramp pieces, excluding basic lands but including 0-cost mana rocks.</summary>
+    public static int CountRealRamp(Deck deck)
+    {
+        // Count cards tagged as Ramp, excluding basic lands
+        int taggedRamp = deck.Cards.Count(card => 
+            IsNonLand(card) && 
+            GetCategoryTags(card).Contains("Ramp") && 
+            !IsBasicLand(card));
+        
+        // Add 0-cost mana rocks (artifacts that produce mana)
+        int manaRocks = deck.Cards.Count(card => IsManaRock(card));
+        
+        return taggedRamp + manaRocks;
+    }
+
     public static DeckArchetype DetectPrimaryArchetype(Deck deck)
     {
-        int rampCount = CountRoleCards(deck, "Ramp");
+        int rampCount = CountRealRamp(deck);
         int drawCount = CountRoleCards(deck, "Card Draw");
         int tokenCount = CountRoleCards(deck, "Token Generation");
         int tutorCount = CountRoleCards(deck, "Tutor");

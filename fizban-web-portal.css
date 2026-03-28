@@ -1,0 +1,174 @@
+:root {
+  --bg: #120c24;
+  --panel: #1a1233;
+  --panel-2: #100a24;
+  --gold: #facc15;
+  --violet: #c4b5fd;
+  --mint: #4ade80;
+  --text: #ede9fe;
+  --muted: #94a3b8;
+  --line: #312e81;
+}
+
+* { box-sizing: border-box; }
+
+body {
+  margin: 0;
+  font-family: "Segoe UI", Tahoma, Geneva, Verdana, sans-serif;
+  color: var(--text);
+  background:
+    radial-gradient(1000px 500px at 0% -20%, rgba(196, 181, 253, 0.15), transparent),
+    linear-gradient(180deg, #0f0a1d 0%, var(--bg) 100%);
+  min-height: 100vh;
+}
+
+.shell {
+  width: min(1100px, 92vw);
+  margin: 26px auto;
+}
+
+.hero {
+  background: linear-gradient(135deg, rgba(26, 18, 51, 0.95), rgba(16, 10, 36, 0.95));
+  border: 1px solid rgba(196, 181, 253, 0.35);
+  border-radius: 18px;
+  padding: 22px;
+}
+
+.kicker {
+  margin: 0 0 8px;
+  color: var(--gold);
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  font-weight: 700;
+  font-size: 0.76rem;
+}
+
+h1 {
+  margin: 0;
+  font-size: clamp(1.55rem, 2.8vw, 2.2rem);
+}
+
+.subtitle {
+  margin: 8px 0 0;
+  color: var(--muted);
+}
+
+.layout {
+  margin-top: 18px;
+  display: grid;
+  grid-template-columns: 1.3fr 1fr;
+  gap: 18px;
+}
+
+.card {
+  background: linear-gradient(180deg, rgba(26, 18, 51, 0.95), rgba(16, 10, 36, 0.95));
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  padding: 16px;
+}
+
+fieldset {
+  border: 1px solid rgba(196, 181, 253, 0.25);
+  border-radius: 10px;
+  padding: 12px;
+  margin: 0;
+}
+
+legend {
+  color: var(--gold);
+  font-size: 0.82rem;
+  padding: 0 6px;
+}
+
+h2 {
+  margin: 0 0 10px;
+  color: var(--violet);
+  font-size: 1.05rem;
+}
+
+label {
+  display: block;
+  margin: 10px 0 6px;
+  font-size: 0.86rem;
+  color: #dbeafe;
+}
+
+input, textarea, select {
+  width: 100%;
+  border: 1px solid rgba(71, 85, 105, 0.8);
+  border-radius: 10px;
+  background: #0a0719;
+  color: var(--text);
+  padding: 10px;
+  font-size: 0.94rem;
+}
+
+textarea {
+  min-height: 260px;
+  resize: vertical;
+  font-family: "Cascadia Mono", Consolas, monospace;
+}
+
+.row {
+  margin-top: 8px;
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 10px;
+}
+
+.actions {
+  margin-top: 14px;
+  display: flex;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.btn {
+  display: inline-block;
+  border: 0;
+  border-radius: 10px;
+  padding: 10px 14px;
+  font-weight: 700;
+  cursor: pointer;
+  text-decoration: none;
+}
+
+.btn-primary {
+  background: linear-gradient(135deg, #22c55e, #16a34a);
+  color: #052e16;
+}
+
+.btn-secondary {
+  background: linear-gradient(135deg, #fde68a, #facc15);
+  color: #422006;
+}
+
+.note {
+  margin-top: 12px;
+  color: var(--muted);
+  font-size: 0.86rem;
+}
+
+.status ul {
+  margin: 0;
+  padding-left: 18px;
+  color: #cbd5e1;
+}
+
+.status li { margin: 8px 0; }
+
+.output {
+  margin-top: 12px;
+  border: 1px solid rgba(49, 46, 129, 0.8);
+  border-radius: 10px;
+  background: #080514;
+  color: #ddd6fe;
+  padding: 10px;
+  white-space: pre-wrap;
+  font-family: "Cascadia Mono", Consolas, monospace;
+}
+
+@media (max-width: 920px) {
+  .layout { grid-template-columns: 1fr; }
+  .row { grid-template-columns: 1fr; }
+}

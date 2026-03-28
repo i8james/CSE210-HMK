@@ -43,9 +43,11 @@ public class DeckEvaluatorForm : Form
 
     private readonly Dictionary<string, CardDbRecord> cardDatabase = new Dictionary<string, CardDbRecord>(StringComparer.OrdinalIgnoreCase);
     private readonly Dictionary<string, CardDbRecord> normalizedCardIndex = new Dictionary<string, CardDbRecord>(StringComparer.OrdinalIgnoreCase);
+    private readonly Dictionary<string, string> commanderLegalityCache = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
     private readonly HashSet<string> persistedCardNames = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
     private readonly List<string> missingCardNames = new List<string>();
     private readonly string cardDatabaseFilePath;
+    private CardMetricsStore? _cardMetrics;
 
     private TextBox commanderTextBox = null!;
     private TextBox moxfieldLinkTextBox = null!;
@@ -438,6 +440,8 @@ public class DeckEvaluatorForm : Form
         UpdateDeckCountLabel();
         ReflowBottomControls();
         LoadCardDatabase();
+        string storageDir = Path.GetDirectoryName(cardDatabaseFilePath) ?? Environment.CurrentDirectory;
+        _cardMetrics = new CardMetricsStore(storageDir);
         LoadUiState();
         Shown += async (_, _) => await RestoreThemeSelectionAsync();
     }
@@ -484,7 +488,8 @@ public class DeckEvaluatorForm : Form
             .Distinct(StringComparer.OrdinalIgnoreCase)
             .Where(File.Exists)
             .Select(path => new FileInfo(path))
-            .OrderByDescending(info => info.LastWriteTimeUtc)
+            .OrderByDescending(info => info.Length)
+            .ThenByDescending(info => info.LastWriteTimeUtc)
             .ToList();
 
         return existing.FirstOrDefault()?.FullName ?? basePath;
@@ -539,8 +544,10 @@ public class DeckEvaluatorForm : Form
             }
         }
 
-        if (comboBox.Items.Count > 0)
-            comboBox.SelectedIndex = Math.Max(0, Math.Min(comboBox.Items.Count - 1, fallbackIndex));
+        if (comboBox.Items.Count == 0)
+            return;
+
+        comboBox.SelectedIndex = Math.Max(0, Math.Min(comboBox.Items.Count - 1, fallbackIndex));
     }
 
     private void DeckEvaluatorForm_FormClosing(object? sender, FormClosingEventArgs e)
@@ -2015,6 +2022,21 @@ public class DeckEvaluatorForm : Form
                 resultsTextBox.AppendText("No cards found in deck list.");
                 return;
             }
+            var legalityErrors = await ValidateCommanderDeckLegalityAsync(deck, cancellationToken);
+            if (legalityErrors.Count > 0)
+            {
+                StopWizardAnimation();
+                resultsTextBox.Clear();
+                resultsTextBox.SelectionColor = Color.FromArgb(248, 113, 113);
+                resultsTextBox.SelectionFont = new Font("Segoe UI", 11, FontStyle.Bold);
+                resultsTextBox.AppendText("Deck Legality Check Failed\n\n");
+                resultsTextBox.SelectionFont = new Font("Segoe UI", 10, FontStyle.Regular);
+                foreach (string error in legalityErrors)
+                    resultsTextBox.AppendText($"- {error}\n");
+
+                progressLabel.Text = "Fix deck legality issues and try again.";
+                return;
+            }
 
             progressLabel.Text = "Checking Commander Spellbook combos...";
             await AttachSpellbookReportAsync(deck, cancellationToken);
@@ -2035,8 +2057,14 @@ public class DeckEvaluatorForm : Form
             var evaluator = new DeckEvaluator(deck, GetSelectedArchetypeOverride(), cedhCheckBox.Checked);
             var results = await Task.Run(() => evaluator.RunSimulations(numSimulations, maxTurns, onDraw, progress =>
             {
-                Invoke((Action)(() =>
+                if (!IsHandleCreated || IsDisposed)
+                    return;
+
+                BeginInvoke((Action)(() =>
                 {
+                    if (IsDisposed)
+                        return;
+
                     int scaled = (int)Math.Round(progress * (double)progressBar.Maximum / numSimulations);
                     scaled = Math.Max(progressBar.Minimum, Math.Min(progressBar.Maximum, scaled));
                     progressBar.Value = scaled;
@@ -2044,9 +2072,12 @@ public class DeckEvaluatorForm : Form
                 }));
             }, cancellationToken), cancellationToken);
 
+            progressLabel.Text = "Gathering commander data...";
+            var enrichedSuggestions = await BuildSuggestionsWithCommanderDataAsync(deck, results);
+
             progressLabel.Text = "Done!";
             StopWizardAnimation();
-            await Task.Run(() => RenderResults(deck, results, numSimulations, maxTurns, onDraw));
+            RenderResults(deck, results, numSimulations, maxTurns, onDraw, enrichedSuggestions);
         }
         catch (OperationCanceledException)
         {
@@ -2124,8 +2155,10 @@ public class DeckEvaluatorForm : Form
 
             Deck deck = await ParseDeck(deckInputTextBox.Text, commanderTextBox.Text);
             await AttachSpellbookReportAsync(deck, cancellationToken);
+            progressLabel.Text = "Gathering commander data...";
+            var enrichedSuggestions = await BuildSuggestionsWithCommanderDataAsync(deck, results);
             StopWizardAnimation();
-            await Task.Run(() => RenderResults(deck, results, simulationsPerBatch, maxTurns, onDraw));
+            RenderResults(deck, results, simulationsPerBatch, maxTurns, onDraw, enrichedSuggestions);
             progressLabel.Text = $"Fizban the Fabulous finished training! Learned games: {results.LearningGamesSeen}";
         }
         catch (OperationCanceledException)
@@ -2286,8 +2319,19 @@ public class DeckEvaluatorForm : Form
         }
     }
 
-    private void RenderResults(Deck deck, EvaluationResults results, int numSimulations, int maxTurns, bool onDraw)
+    private void RenderResults(Deck deck, EvaluationResults results, int numSimulations, int maxTurns, bool onDraw, IReadOnlyList<DeckSuggestion> enrichedSuggestions)
     {
+        // Record all cards in the deck to learn what cards are good
+        if (_cardMetrics != null && deck.Commander != null)
+        {
+            var deckArchetype = DeckAnalysis.DetectPrimaryArchetype(deck);
+            foreach (var card in deck.Cards.Where(c => !c.IsCommander))
+            {
+                _cardMetrics.RecordCardInDeck(card, deck, deckArchetype);
+            }
+            _cardMetrics.SaveMetrics();
+        }
+
         resultsTextBox.Clear();
 
         void Header(string text)
@@ -2448,9 +2492,6 @@ public class DeckEvaluatorForm : Form
             .Where(text => !text.StartsWith("===") && !text.StartsWith("\n===") && text != "-")
             .Where(text => text.StartsWith("🚨") || text.StartsWith("⚠️") || text.StartsWith("💡") || text.StartsWith("✓") || text.Contains("Add ") || text.Contains("trim", StringComparison.OrdinalIgnoreCase) || text.Contains("consider", StringComparison.OrdinalIgnoreCase))
             .ToList();
-
-        var enrichedSuggestions = BuildSuggestionsWithCommanderData(deck, results);
-
         var topSuggestions = enrichedSuggestions
             .Where(suggestion => !suggestion.Source.Equals("EDHREC", StringComparison.OrdinalIgnoreCase))
             .OrderByDescending(suggestion => suggestion.Confidence)
@@ -2674,7 +2715,7 @@ public class DeckEvaluatorForm : Form
         }
     }
 
-    private List<DeckSuggestion> BuildSuggestionsWithCommanderData(Deck deck, EvaluationResults results)
+    private async Task<List<DeckSuggestion>> BuildSuggestionsWithCommanderDataAsync(Deck deck, EvaluationResults results)
     {
         var enriched = results.Suggestions
             .Select(suggestion => EnrichSuggestionFromDatabase(deck, suggestion))
@@ -2682,11 +2723,13 @@ public class DeckEvaluatorForm : Form
 
         string commanderName = commanderTextBox.Text.Trim();
         if (commanderName.Length == 0)
-            return enriched;
+            return SanitizeCommanderLegalSuggestions(deck, enriched);
 
-        List<string> edhrecSuggestions = GetEdhrecSuggestionsAsync(commanderName, deck, 6)
-            .GetAwaiter()
-            .GetResult();
+        List<string> edhrecSuggestions = await GetEdhrecSuggestionsAsync(commanderName, deck, 6);
+        if (edhrecSuggestions.Any())
+            await PrefetchMissingCardsAsync(edhrecSuggestions);
+
+        edhrecSuggestions = FilterCommanderLegalCardNames(deck, edhrecSuggestions, 5);
 
         if (edhrecSuggestions.Any())
         {
@@ -2738,7 +2781,7 @@ public class DeckEvaluatorForm : Form
             });
         }
 
-        return enriched;
+            return SanitizeCommanderLegalSuggestions(deck, enriched);
     }
 
     private List<string> ExtractEdhrecCommanderCards(JsonElement root, Deck deck, string commanderName, int maxSuggestions, string selectedTheme)
@@ -2805,9 +2848,8 @@ public class DeckEvaluatorForm : Form
                         && !inDeck.Contains(name)
                         && !name.Equals(commanderName, StringComparison.OrdinalIgnoreCase))
                     {
-                        // Only include cards in the commander's color identity
                         var record = FindCardRecord(name);
-                        if (record == null || deck.IsInColorIdentity(record))
+                        if (record != null && deck.IsInColorIdentity(record))
                             names.Add(name);
                     }
                 }
@@ -2841,7 +2883,7 @@ public class DeckEvaluatorForm : Form
             .Select(record => new
             {
                 Record = record,
-                SignatureScore = ScoreCardRecordForEffect(record, roleTag)
+                SignatureScore = ScoreCardRecordForDeck(record, roleTag, deck)
             })
             .Where(entry => entry.SignatureScore > 0)
             .Where(entry => entry.Record.ManaCost <= maxManaCost)
@@ -2853,6 +2895,100 @@ public class DeckEvaluatorForm : Form
             .Distinct(StringComparer.OrdinalIgnoreCase)
             .Take(maxResults)
             .ToList();
+    }
+
+    private int ScoreCardRecordForDeck(CardDbRecord record, string roleTag, Deck deck)
+    {
+        int score = ScoreCardRecordForEffect(record, roleTag);
+        var tags = (record.Category ?? string.Empty)
+            .Split(new[] { ',', ';' }, StringSplitOptions.RemoveEmptyEntries)
+            .Select(tag => tag.Trim())
+            .ToHashSet(StringComparer.OrdinalIgnoreCase);
+        var archetype = GetSelectedArchetypeOverride() ?? DeckAnalysis.DetectPrimaryArchetype(deck);
+
+        if (tags.Contains("Other"))
+            score -= 2;
+        if (string.IsNullOrWhiteSpace(record.OracleText))
+            score -= 1;
+
+        // Boost score based on learned card quality from submitted decks
+        if (_cardMetrics != null)
+        {
+            double qualityScore = _cardMetrics.GetCardQualityScore(record, archetype);
+            // Scale quality score (0-100) into a modest bonus (0-10 points)
+            int qualityBonus = (int)Math.Round(qualityScore / 10.0);
+            score += qualityBonus;
+        }
+
+        // Smart ramp recommendations: prioritize early ramp when needed
+        if (roleTag.Equals("Ramp", StringComparison.OrdinalIgnoreCase) && tags.Contains("Ramp"))
+        {
+            var earlyRamp = DeckAnalysis.GetEarlyRampCards(deck);
+            int earlyRampCount = earlyRamp.Count;
+            int targetEarlyRamp = Math.Max(2, DeckAnalysis.CountRealRamp(deck) - 2);
+            
+            // If we need more early ramp, heavily boost 0-2 CMC ramp cards
+            if (earlyRampCount < targetEarlyRamp)
+            {
+                if (record.ManaCost <= 2)
+                    score += 6; // High priority for actual early ramp
+                else if (record.ManaCost <= 3)
+                    score += 2;
+            }
+            
+            // Check ramp type breakdown to recommend variety
+            var rampBreakdown = DeckAnalysis.GetRampTypeBreakdown(deck);
+            
+            // If we're heavy on artifacts, boost creature ramp
+            if (rampBreakdown[DeckAnalysis.RampType.ArtifactRamp] > 3 && 
+                rampBreakdown[DeckAnalysis.RampType.CreatureRamp] < 2)
+            {
+                if (record.Type.Contains("Creature", StringComparison.OrdinalIgnoreCase))
+                    score += 3;
+            }
+            
+            // If we're heavy on creatures, boost artifact ramp for redundancy
+            if (rampBreakdown[DeckAnalysis.RampType.CreatureRamp] > 3 && 
+                rampBreakdown[DeckAnalysis.RampType.ArtifactRamp] < 2)
+            {
+                if (record.Type.Contains("Artifact", StringComparison.OrdinalIgnoreCase))
+                    score += 3;
+            }
+        }
+
+        switch (archetype)
+        {
+            case DeckArchetype.Spellslinger:
+                if (record.Type.Contains("Instant", StringComparison.OrdinalIgnoreCase) || record.Type.Contains("Sorcery", StringComparison.OrdinalIgnoreCase))
+                    score += 3;
+                if (record.Type.Contains("Creature", StringComparison.OrdinalIgnoreCase) && !tags.Contains("Token Generation") && !tags.Contains("Protection"))
+                    score -= 3;
+                break;
+
+            case DeckArchetype.Combo:
+                if (tags.Contains("Tutor") || tags.Contains("Card Draw") || tags.Contains("Counterspell"))
+                    score += 2;
+                if (record.ManaCost >= 5 && !tags.Contains("Tutor") && !tags.Contains("Card Draw"))
+                    score -= 2;
+                break;
+
+            case DeckArchetype.Tokens:
+                if (tags.Contains("Token Generation") || tags.Contains("Protection"))
+                    score += 3;
+                break;
+
+            case DeckArchetype.Tribal:
+                if (record.Type.Contains("Creature", StringComparison.OrdinalIgnoreCase))
+                    score += 2;
+                break;
+
+            case DeckArchetype.Ramp:
+                if (record.ManaCost >= 4 && !roleTag.Equals("Ramp", StringComparison.OrdinalIgnoreCase))
+                    score += 1;
+                break;
+        }
+
+        return score;
     }
 
     private static int ScoreCardRecordForRole(CardDbRecord record, string roleTag)
@@ -3034,6 +3170,11 @@ public class DeckEvaluatorForm : Form
                 .ToList();
         }
 
+        enriched.SuggestedAdds = FilterCommanderLegalCardNames(deck, enriched.SuggestedAdds, 5);
+        enriched.AddReasons = enriched.AddReasons
+            .Where(entry => enriched.SuggestedAdds.Contains(entry.Key, StringComparer.OrdinalIgnoreCase))
+            .ToDictionary(entry => entry.Key, entry => entry.Value, StringComparer.OrdinalIgnoreCase);
+
         foreach (var cut in enriched.SuggestedCuts)
         {
             if (!enriched.CutReasons.ContainsKey(cut))
@@ -3041,6 +3182,35 @@ public class DeckEvaluatorForm : Form
         }
 
         return enriched;
+    }
+
+    private List<string> FilterCommanderLegalCardNames(Deck deck, IEnumerable<string> names, int maxResults)
+    {
+        return names
+            .Select(NormalizeDeckCardName)
+            .Where(name => name.Length > 0)
+            .Where(name =>
+            {
+                var record = FindCardRecord(name);
+                return record != null && deck.IsInColorIdentity(record);
+            })
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .Take(maxResults)
+            .ToList();
+    }
+
+    private List<DeckSuggestion> SanitizeCommanderLegalSuggestions(Deck deck, IEnumerable<DeckSuggestion> suggestions)
+    {
+        return suggestions
+            .Select(suggestion =>
+            {
+                suggestion.SuggestedAdds = FilterCommanderLegalCardNames(deck, suggestion.SuggestedAdds, 5);
+                suggestion.AddReasons = suggestion.AddReasons
+                    .Where(entry => suggestion.SuggestedAdds.Contains(entry.Key, StringComparer.OrdinalIgnoreCase))
+                    .ToDictionary(entry => entry.Key, entry => entry.Value, StringComparer.OrdinalIgnoreCase);
+                return suggestion;
+            })
+            .ToList();
     }
 
     private async Task RefreshEdhrecThemesAsync()
@@ -3292,6 +3462,9 @@ public class DeckEvaluatorForm : Form
         Deck deck = await ParseDeck(deckText, commanderText);
         if (deck.Cards.Count == 0)
             throw new InvalidOperationException("No cards found after parsing deck text.");
+        var legalityErrors = await ValidateCommanderDeckLegalityAsync(deck, cancellationToken);
+        if (legalityErrors.Count > 0)
+            throw new InvalidOperationException("Deck legality check failed: " + string.Join(" | ", legalityErrors.Take(6)));
 
         log?.Invoke("Checking Commander Spellbook combos...");
         await AttachSpellbookReportAsync(deck, cancellationToken);
@@ -3308,6 +3481,238 @@ public class DeckEvaluatorForm : Form
         }
 
         return latest ?? throw new InvalidOperationException("Training run did not produce results.");
+    }
+
+    private async Task<List<string>> ValidateCommanderDeckLegalityAsync(Deck deck, CancellationToken cancellationToken = default)
+    {
+        var errors = new List<string>();
+
+        if (deck.Commander == null || string.IsNullOrWhiteSpace(deck.Commander.Name))
+            errors.Add("Commander is required.");
+
+        int nonCommanderCount = deck.Cards.Count(card => !card.IsCommander);
+        if (nonCommanderCount != 99)
+            errors.Add($"Commander format expects exactly 99 cards in the decklist (found {nonCommanderCount}).");
+
+        var copyGroups = deck.Cards
+            .Where(card => !card.IsCommander && !string.IsNullOrWhiteSpace(card.Name))
+            .GroupBy(card => card.Name!.Trim(), StringComparer.OrdinalIgnoreCase)
+            .Where(group => group.Count() > 1)
+            .ToList();
+
+        int duplicateIssues = 0;
+        foreach (var group in copyGroups)
+        {
+            var exemplar = group.First();
+            if (IsBasicLandCard(exemplar) || AllowsUnlimitedCopies(exemplar))
+                continue;
+
+            duplicateIssues++;
+            if (duplicateIssues <= 6)
+                errors.Add($"{group.Key} has {group.Count()} copies (Commander allows only 1 unless a card says otherwise).");
+        }
+
+        if (duplicateIssues > 6)
+            errors.Add($"{duplicateIssues - 6} additional duplicate-card issues not shown.");
+
+        if (deck.Commander != null)
+        {
+            var commanderIdentity = deck.GetCommanderColorIdentity();
+            if (commanderIdentity.Count > 0)
+            {
+                var illegalGroups = deck.Cards
+                    .Where(card => !card.IsCommander)
+                    .Where(card => !IsCardWithinCommanderIdentity(card, commanderIdentity))
+                    .GroupBy(card => card.Name ?? "Unknown Card", StringComparer.OrdinalIgnoreCase)
+                    .Select(group => group.Key)
+                    .OrderBy(name => name)
+                    .ToList();
+
+                foreach (string name in illegalGroups.Take(8))
+                    errors.Add($"{name} is outside the commander's color identity.");
+
+                if (illegalGroups.Count > 8)
+                    errors.Add($"{illegalGroups.Count - 8} additional color identity violations not shown.");
+            }
+        }
+
+        // Commander banlist / legality lookup via Scryfall (cached per app session).
+        var namesToCheck = deck.Cards
+            .Where(card => !card.IsCommander && !string.IsNullOrWhiteSpace(card.Name))
+            .Select(card => card.Name!.Trim())
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .ToList();
+
+        var illegalByFormat = await LookupCommanderIllegalCardsAsync(namesToCheck, cancellationToken);
+        foreach (var issue in illegalByFormat.Take(8))
+            errors.Add(issue);
+        if (illegalByFormat.Count > 8)
+            errors.Add($"{illegalByFormat.Count - 8} additional Commander format legality issues not shown.");
+
+        return errors;
+    }
+
+    private async Task<List<string>> LookupCommanderIllegalCardsAsync(IEnumerable<string> cardNames, CancellationToken cancellationToken)
+    {
+        var issues = new List<string>();
+        var uniqueNames = cardNames
+            .Select(NormalizeDeckCardName)
+            .Where(name => name.Length > 0)
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .ToList();
+
+        var unresolved = new List<string>();
+        foreach (var name in uniqueNames)
+        {
+            string key = BuildLookupKey(name);
+            if (key.Length > 0 && commanderLegalityCache.TryGetValue(key, out var cachedStatus))
+            {
+                cachedStatus ??= "unknown";
+                if (!IsCommanderLegalStatus(cachedStatus))
+                    issues.Add(BuildCommanderLegalityError(name, cachedStatus));
+            }
+            else
+            {
+                unresolved.Add(name);
+            }
+        }
+
+        if (!unresolved.Any())
+            return issues;
+
+        const int maxIdentifiersPerRequest = 75;
+        for (int index = 0; index < unresolved.Count; index += maxIdentifiersPerRequest)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            var chunk = unresolved.Skip(index).Take(maxIdentifiersPerRequest).ToList();
+            var fetched = await FetchCommanderLegalityChunkAsync(chunk);
+
+            foreach (var name in chunk)
+            {
+                string key = BuildLookupKey(name);
+                string status = fetched.TryGetValue(name, out var foundStatus) ? (foundStatus ?? "unknown") : "unknown";
+                if (key.Length > 0)
+                    commanderLegalityCache[key] = status;
+
+                if (!IsCommanderLegalStatus(status))
+                    issues.Add(BuildCommanderLegalityError(name, status));
+            }
+        }
+
+        return issues;
+    }
+
+    private async Task<Dictionary<string, string>> FetchCommanderLegalityChunkAsync(List<string> names)
+    {
+        var statuses = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+        if (names.Count == 0)
+            return statuses;
+
+        try
+        {
+            using var payload = new StringContent(JsonSerializer.Serialize(new
+            {
+                identifiers = names.Select(name => new { name }).ToList()
+            }), System.Text.Encoding.UTF8, "application/json");
+
+            using var response = await Http.PostAsync("https://api.scryfall.com/cards/collection", payload);
+            if (!response.IsSuccessStatusCode)
+                return statuses;
+
+            string json = await response.Content.ReadAsStringAsync();
+            using var document = JsonDocument.Parse(json);
+            var root = document.RootElement;
+            if (!root.TryGetProperty("data", out var dataElement) || dataElement.ValueKind != JsonValueKind.Array)
+                return statuses;
+
+            foreach (var cardElement in dataElement.EnumerateArray())
+            {
+                if (!cardElement.TryGetProperty("name", out var nameElement) || nameElement.ValueKind != JsonValueKind.String)
+                    continue;
+
+                string fetchedName = NormalizeDeckCardName(nameElement.GetString());
+                if (fetchedName.Length == 0)
+                    continue;
+
+                string status = ReadCommanderLegalityStatus(cardElement);
+                statuses[fetchedName] = status;
+            }
+        }
+        catch
+        {
+            // Leave statuses unresolved; callers will treat unknown conservatively.
+        }
+
+        return statuses;
+    }
+
+    private static string ReadCommanderLegalityStatus(JsonElement cardElement)
+    {
+        if (cardElement.TryGetProperty("legalities", out var legalities)
+            && legalities.ValueKind == JsonValueKind.Object
+            && legalities.TryGetProperty("commander", out var commanderStatus)
+            && commanderStatus.ValueKind == JsonValueKind.String)
+        {
+            return commanderStatus.GetString()?.Trim().ToLowerInvariant() ?? "unknown";
+        }
+
+        return "unknown";
+    }
+
+    private static bool IsCommanderLegalStatus(string status)
+    {
+        return status.Equals("legal", StringComparison.OrdinalIgnoreCase)
+            || status.Equals("unknown", StringComparison.OrdinalIgnoreCase);
+    }
+
+    private static string BuildCommanderLegalityError(string cardName, string status)
+    {
+        return status switch
+        {
+            "banned" => $"{cardName} is banned in Commander.",
+            "not_legal" => $"{cardName} is not legal in Commander.",
+            "restricted" => $"{cardName} is restricted and not legal for normal Commander deck construction.",
+            _ => $"{cardName} has an unknown Commander legality status."
+        };
+    }
+
+    private static bool IsBasicLandCard(Card card)
+    {
+        if (!card.IsLand)
+            return false;
+
+        var typeTokens = DeckAnalysis.ExtractTypeTokens(card.Type);
+        if (typeTokens.Contains("Basic", StringComparer.OrdinalIgnoreCase))
+            return true;
+
+        if (string.IsNullOrWhiteSpace(card.Name))
+            return false;
+
+        return card.Name.Equals("Plains", StringComparison.OrdinalIgnoreCase)
+            || card.Name.Equals("Island", StringComparison.OrdinalIgnoreCase)
+            || card.Name.Equals("Swamp", StringComparison.OrdinalIgnoreCase)
+            || card.Name.Equals("Mountain", StringComparison.OrdinalIgnoreCase)
+            || card.Name.Equals("Forest", StringComparison.OrdinalIgnoreCase)
+            || card.Name.Equals("Wastes", StringComparison.OrdinalIgnoreCase);
+    }
+
+    private static bool AllowsUnlimitedCopies(Card card)
+    {
+        if (string.IsNullOrWhiteSpace(card.OracleText))
+            return false;
+
+        string oracle = card.OracleText.ToLowerInvariant();
+        return oracle.Contains("a deck can have any number of cards named")
+            || oracle.Contains("a deck can have any number of cards with the same name as this card");
+    }
+
+    private static bool IsCardWithinCommanderIdentity(Card card, HashSet<string> commanderIdentity)
+    {
+        var cardIdentity = card.ColorIdentity.Count > 0 ? card.ColorIdentity : card.Colors;
+        if (cardIdentity.Count == 0)
+            return true;
+
+        return cardIdentity.All(color => commanderIdentity.Contains(color));
     }
 
     private static bool ShouldIgnoreDeckLine(string line)

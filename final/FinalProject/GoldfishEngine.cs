@@ -948,6 +948,7 @@ public class DeckEvaluator
     private readonly Deck _deck;
     private readonly DeckArchetype _selectedArchetype;
     private readonly bool _isCedh;
+    private readonly GoldfishLearningProfile _learningProfile;
 
     private sealed class ArchetypeTargets
     {
@@ -981,6 +982,7 @@ public class DeckEvaluator
         _deck = deck;
         _isCedh = isCedh;
         _selectedArchetype = archetypeOverride ?? DeckAnalysis.DetectPrimaryArchetype(deck);
+        _learningProfile = GoldfishLearningStore.LoadProfile(deck);
     }
 
     public EvaluationResults RunSimulations(int numSimulations, int maxTurns, bool onDraw = false, Action<int>? progressCallback = null, CancellationToken cancellationToken = default)
@@ -1924,14 +1926,38 @@ public class DeckEvaluator
         int rampCount = deck.Cards.Count(card => !card.IsLand && DeckAnalysis.GetCategoryTags(card).Contains("Ramp"));
         int rampMin = targets.RampMin;
         int rampMax = targets.RampMax;
+        
+        // Analyze ramp by type
+        var rampBreakdown = DeckAnalysis.GetRampTypeBreakdown(deck);
+        var earlyRamp = DeckAnalysis.GetEarlyRampCards(deck);
+        int earlyRampCount = earlyRamp.Count;
+        int targetEarlyRamp = Math.Max(2, rampMin - 2);
+        
+        // Show ramp composition
+        string rampComposition = $"Creatures: {rampBreakdown[DeckAnalysis.RampType.CreatureRamp]}, " +
+                               $"Artifacts: {rampBreakdown[DeckAnalysis.RampType.ArtifactRamp]}, " +
+                               $"Enchantments: {rampBreakdown[DeckAnalysis.RampType.EnchantmentRamp]}, " +
+                               $"Spells: {rampBreakdown[DeckAnalysis.RampType.SpellRamp]}";
+        results.Recommendations.Add($"Ramp composition: {rampComposition} | Early (0-2): {earlyRampCount}/{targetEarlyRamp}");
+        
         if (rampCount < rampMin)
         {
             var cuts = RankCutCandidates("Ramp", 5, minManaCost: 4);
             results.Recommendations.Add($"⚠️  Ramp is low ({rampCount} / target {rampMin}-{rampMax}): add ~{rampMin - rampCount} mana accelerators. Current ramp: {FormatNameList(GetTopNamesByTag("Ramp"))}");
+            
+            // Smart recommendation based on what's missing
+            string rampAdvice = "";
+            if (earlyRampCount < targetEarlyRamp)
+                rampAdvice = $"Prioritize early ramp (0-2 mana) like mana dorks and cheap rocks.";
+            else if (rampBreakdown[DeckAnalysis.RampType.ArtifactRamp] < 2)
+                rampAdvice = "Add mana rocks (artifacts) for consistent acceleration.";
+            else if (rampBreakdown[DeckAnalysis.RampType.CreatureRamp] < 2)
+                rampAdvice = "Add creature ramp (mana dorks) for early plays.";
+            
             AddSuggestion(
                 DeckSuggestionKind.Add,
                 "Add early ramp",
-                "The deck is short on acceleration, which is hurting both commander timing and overall mana efficiency.",
+                rampAdvice.Length > 0 ? rampAdvice : "The deck is short on acceleration, which is hurting both commander timing and overall mana efficiency.",
                 0.88,
                 roleTag: "Ramp",
                 cuts: cuts.Names,
@@ -1952,7 +1978,21 @@ public class DeckEvaluator
                 cutReasons: cuts.Reasons);
         }
         else
-            results.Recommendations.Add($"✓ Ramp is healthy ({rampCount} / target {rampMin}-{rampMax}): {FormatNameList(GetTopNamesByTag("Ramp"))}");
+        {
+            // Offer targeted improvements even when ramp count is on target
+            string healthReport = $"Ramp is healthy ({rampCount} / target {rampMin}-{rampMax})";
+            
+            if (earlyRampCount < targetEarlyRamp)
+            {
+                healthReport += $", but early ramp is light ({earlyRampCount}/{targetEarlyRamp}). Consider swapping slower ramps for 0-2 CMC pieces.";
+            }
+            else if (rampBreakdown[DeckAnalysis.RampType.CreatureRamp] == 0 && rampBreakdown[DeckAnalysis.RampType.ArtifactRamp] > 3)
+            {
+                healthReport += ". Consider adding creature ramp for some redundancy.";
+            }
+            
+            results.Recommendations.Add($"✓ {healthReport}");
+        }
 
         results.Recommendations.Add("\n=== ARCHETYPE FIT ===");
         results.Recommendations.Add($"Primary plan check: {targets.FocusSummary}");
@@ -1995,8 +2035,6 @@ public class DeckEvaluator
         results.Recommendations.Add($"Stranded 5+ mana cards in hand at game end: {results.AverageStrandedHighCostCards:F2}");
         if (deck.Commander != null)
             results.Recommendations.Add($"Commander cast rate: {results.CommanderCastRate:F1}% | Average cast turn: {(results.AverageCommanderCastTurn > 0 ? $"T{results.AverageCommanderCastTurn:F2}" : "not cast")}");
-        if (results.LearningGamesSeen > 0)
-            results.Recommendations.Add($"Learning profile games recorded: {results.LearningGamesSeen}");
 
         if (results.AverageIdleTurns > 2)
         {

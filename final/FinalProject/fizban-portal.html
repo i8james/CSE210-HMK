@@ -1,0 +1,96 @@
+<!DOCTYPE html>
+<html lang="en-us">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Fizban Portal</title>
+  <link rel="stylesheet" href="fizban-portal.css">
+</head>
+<body>
+  <main class="portal">
+    <section class="hero">
+      <p class="kicker">Fizban the Fabulous</p>
+      <h1>Deck Evaluation Portal</h1>
+      <p class="subhead">Web entry point for your commander deck analysis workflow, styled to match your Fizban app theme. Paste a list, validate legality, and prep runs for the desktop evaluator.</p>
+      <div class="badges">
+        <span class="badge">Commander Legality</span>
+        <span class="badge">Ramp Profile</span>
+        <span class="badge">Recommendation Ready</span>
+      </div>
+    </section>
+
+    <section class="grid">
+      <article class="panel">
+        <h2>Deck Intake</h2>
+        <div class="field">
+          <label for="commander">Commander</label>
+          <input id="commander" type="text" placeholder="Atraxa, Praetors' Voice">
+        </div>
+        <div class="field">
+          <label for="decklist">Decklist (99 cards)</label>
+          <textarea id="decklist" placeholder="1 Sol Ring&#10;1 Arcane Signet&#10;1 Swords to Plowshares"></textarea>
+        </div>
+
+        <div class="meta-row">
+          <div class="field">
+            <label for="sim-count">Simulations</label>
+            <select id="sim-count">
+              <option>10k</option>
+              <option selected>50k</option>
+              <option>200k</option>
+              <option>500k</option>
+            </select>
+          </div>
+          <div class="field">
+            <label for="turn-cap">Turn Cap</label>
+            <select id="turn-cap">
+              <option>8</option>
+              <option selected>10</option>
+              <option>12</option>
+            </select>
+          </div>
+          <div class="field">
+            <label for="archetype">Archetype</label>
+            <select id="archetype">
+              <option selected>Auto Detect</option>
+              <option>Midrange</option>
+              <option>Ramp</option>
+              <option>Combo</option>
+              <option>Tokens</option>
+              <option>Spellslinger</option>
+              <option>Tribal</option>
+            </select>
+          </div>
+        </div>
+
+        <div class="actions">
+          <button class="button primary" type="button">Validate & Queue Analysis</button>
+          <button class="button alt" type="button">Export Input</button>
+          <button class="button ghost" type="button" onclick="window.location.href='../../develop.html'">Back to Course Portal</button>
+        </div>
+
+        <div class="notice">This portal mirrors the desktop app experience and prepares deck data for Fizban. There may be bugs or other kinds of errors.</div>
+        <div class="notice">If you wanna throw me a bone so I can keep this project alive, consider supporting me! My venmo is @i8james</div> 
+      </article>
+
+      <aside class="panel">
+        <h2>Run Status</h2>
+        <ul class="quick">
+          <li><strong>Step 1:</strong> Confirm commander and 99-card decklist.</li>
+          <li><strong>Step 2:</strong> Validate color identity and Commander legality.</li>
+          <li><strong>Step 3:</strong> Launch evaluation in the desktop app flow.</li>
+          <li><strong>Step 4:</strong> Review ramp, curve, and cut/add suggestions.</li>
+        </ul>
+
+        <div class="result">Fizban Portal Ready.
+
+- Intake controls configured.
+- Awaiting deck submission.
+- Desktop engine handles simulation execution.</div>
+      </aside>
+    </section>
+
+    <p class="footer">Fizban's Fantastical Folio portal layer for CSE210 FinalProject.</p>
+  </main>
+</body>
+</html>
