@@ -2690,6 +2690,11 @@ public class DeckEvaluatorForm : Form
 
     private async Task<List<string>> GetEdhrecSuggestionsAsync(string commanderName, Deck deck, int maxSuggestions = 5)
     {
+        return await GetEdhrecSuggestionsAsync(commanderName, deck, GetSelectedEdhrecTheme(), maxSuggestions);
+    }
+
+    private async Task<List<string>> GetEdhrecSuggestionsAsync(string commanderName, Deck deck, string selectedTheme, int maxSuggestions = 5)
+    {
         if (string.IsNullOrWhiteSpace(commanderName))
             return new List<string>();
 
@@ -2706,7 +2711,6 @@ public class DeckEvaluatorForm : Form
 
             string json = await response.Content.ReadAsStringAsync();
             using var document = JsonDocument.Parse(json);
-            string selectedTheme = GetSelectedEdhrecTheme();
             return ExtractEdhrecCommanderCards(document.RootElement, deck, commanderName.Trim(), maxSuggestions, selectedTheme);
         }
         catch
@@ -2717,15 +2721,19 @@ public class DeckEvaluatorForm : Form
 
     private async Task<List<DeckSuggestion>> BuildSuggestionsWithCommanderDataAsync(Deck deck, EvaluationResults results)
     {
+        return await BuildSuggestionsWithCommanderDataAsync(deck, results, commanderTextBox.Text.Trim(), GetSelectedEdhrecTheme());
+    }
+
+    private async Task<List<DeckSuggestion>> BuildSuggestionsWithCommanderDataAsync(Deck deck, EvaluationResults results, string commanderName, string selectedTheme)
+    {
         var enriched = results.Suggestions
             .Select(suggestion => EnrichSuggestionFromDatabase(deck, suggestion))
             .ToList();
 
-        string commanderName = commanderTextBox.Text.Trim();
         if (commanderName.Length == 0)
             return SanitizeCommanderLegalSuggestions(deck, enriched);
 
-        List<string> edhrecSuggestions = await GetEdhrecSuggestionsAsync(commanderName, deck, 6);
+        List<string> edhrecSuggestions = await GetEdhrecSuggestionsAsync(commanderName, deck, selectedTheme, 6);
         if (edhrecSuggestions.Any())
             await PrefetchMissingCardsAsync(edhrecSuggestions);
 
@@ -2781,7 +2789,101 @@ public class DeckEvaluatorForm : Form
             });
         }
 
-            return SanitizeCommanderLegalSuggestions(deck, enriched);
+        return SanitizeCommanderLegalSuggestions(deck, enriched);
+    }
+
+    public async Task<PortalAnalysisResponse> RunPortalAnalysisAsync(PortalAnalysisRequest request, CancellationToken cancellationToken = default)
+    {
+        if (request == null)
+            throw new ArgumentNullException(nameof(request));
+
+        string deckText = request.DecklistText ?? string.Empty;
+        string commanderText = request.Commander ?? string.Empty;
+        int maxTurns = request.TurnCap > 0 ? request.TurnCap : 10;
+        int numSimulations = ParseSimulationCount(request.Simulations);
+        DeckArchetype? archetypeOverride = ParseArchetypeOverride(request.Archetype);
+        string selectedTheme = request.Theme ?? string.Empty;
+
+        var rawInputLines = deckText.Split(new[] { '\r', '\n' }, StringSplitOptions.RemoveEmptyEntries);
+        var prefetchNames = rawInputLines
+            .Select(line => TryParseDeckEntry(line, out string parsedName, out _) ? parsedName : string.Empty)
+            .Where(name => name.Length > 0)
+            .ToList();
+        if (!string.IsNullOrWhiteSpace(commanderText))
+            prefetchNames.Add(NormalizeDeckCardName(commanderText));
+
+        await PrefetchMissingCardsAsync(prefetchNames);
+        cancellationToken.ThrowIfCancellationRequested();
+
+        Deck deck = await ParseDeck(deckText, commanderText);
+        if (deck.Cards.Count == 0)
+        {
+            return new PortalAnalysisResponse
+            {
+                Success = false,
+                Errors = new List<string> { "No cards found in deck list." }
+            };
+        }
+
+        var legalityErrors = await ValidateCommanderDeckLegalityAsync(deck, cancellationToken);
+        if (legalityErrors.Count > 0)
+        {
+            return new PortalAnalysisResponse
+            {
+                Success = false,
+                Errors = legalityErrors
+            };
+        }
+
+        await AttachSpellbookReportAsync(deck, cancellationToken);
+
+        var evaluator = new DeckEvaluator(deck, archetypeOverride, request.IsCedh);
+        var results = await Task.Run(() => evaluator.RunSimulations(numSimulations, maxTurns, request.OnDraw, cancellationToken: cancellationToken), cancellationToken);
+
+        var enrichedSuggestions = await BuildSuggestionsWithCommanderDataAsync(deck, results, commanderText.Trim(), selectedTheme);
+        string report = BuildPlainTextReport(deck, results, numSimulations, maxTurns, request.OnDraw, enrichedSuggestions);
+
+        return new PortalAnalysisResponse
+        {
+            Success = true,
+            ReportText = report
+        };
+    }
+
+    private string BuildPlainTextReport(Deck deck, EvaluationResults results, int numSimulations, int maxTurns, bool onDraw, IReadOnlyList<DeckSuggestion> enrichedSuggestions)
+    {
+        RichTextBox original = resultsTextBox;
+        using var scratch = new RichTextBox();
+        resultsTextBox = scratch;
+        try
+        {
+            RenderResults(deck, results, numSimulations, maxTurns, onDraw, enrichedSuggestions);
+            return scratch.Text;
+        }
+        finally
+        {
+            resultsTextBox = original;
+        }
+    }
+
+    private static int ParseSimulationCount(string? simulations)
+    {
+        return simulations switch
+        {
+            "10k" => 10000,
+            "50k" => 50000,
+            "200k" => 200000,
+            "500k" => 500000,
+            _ => 100000
+        };
+    }
+
+    private static DeckArchetype? ParseArchetypeOverride(string? raw)
+    {
+        if (string.IsNullOrWhiteSpace(raw) || raw.Trim().Equals("Auto Detect", StringComparison.OrdinalIgnoreCase))
+            return null;
+
+        return Enum.TryParse<DeckArchetype>(raw.Trim(), true, out var parsed) ? parsed : null;
     }
 
     private List<string> ExtractEdhrecCommanderCards(JsonElement root, Deck deck, string commanderName, int maxSuggestions, string selectedTheme)

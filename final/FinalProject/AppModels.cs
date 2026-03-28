@@ -190,3 +190,22 @@ public class DeckSuggestion
     public Dictionary<string, string> AddReasons { get; set; } = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
     public Dictionary<string, string> CutReasons { get; set; } = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
 }
+
+public class PortalAnalysisRequest
+{
+    public string Commander { get; set; } = string.Empty;
+    public string DecklistText { get; set; } = string.Empty;
+    public string Simulations { get; set; } = "50k";
+    public int TurnCap { get; set; } = 10;
+    public string Archetype { get; set; } = "Auto Detect";
+    public bool OnDraw { get; set; }
+    public bool IsCedh { get; set; }
+    public string Theme { get; set; } = string.Empty;
+}
+
+public class PortalAnalysisResponse
+{
+    public bool Success { get; set; }
+    public string ReportText { get; set; } = string.Empty;
+    public List<string> Errors { get; set; } = new List<string>();
+}

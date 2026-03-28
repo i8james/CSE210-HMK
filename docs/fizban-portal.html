@@ -64,12 +64,12 @@
         </div>
 
         <div class="actions">
-          <button id="validate-queue-btn" class="button primary" type="button">Validate & Queue Analysis</button>
+          <button id="validate-queue-btn" class="button primary" type="button">Run Full Analysis</button>
           <button id="export-input-btn" class="button alt" type="button">Export Input</button>
           <button class="button ghost" type="button" onclick="window.location.href='../../develop.html'">Back to Course Portal</button>
         </div>
 
-        <div class="notice">This portal mirrors the desktop app experience and prepares deck data for Fizban. The current project remains desktop-executed for simulation and full recommendations.</div>
+        <div class="notice">This portal now calls the same C# simulation engine as the desktop app. Start the local API first with: dotnet run --project final/FinalProject/FinalProject.csproj -- --web --port 5057</div>
       </article>
 
       <aside class="panel">
@@ -86,7 +86,7 @@
 - Theme synced with desktop palette.
 - Intake controls configured.
 - Awaiting deck submission.
-- Desktop engine handles simulation execution.</div>
+- Local Fizban API handles simulation execution.</div>
       </aside>
     </section>
 

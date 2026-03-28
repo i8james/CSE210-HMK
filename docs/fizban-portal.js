@@ -1,6 +1,8 @@
 (function () {
   "use strict";
 
+  const API_BASE_URL = "http://127.0.0.1:5057";
+
   const commanderInput = document.getElementById("commander");
   const decklistInput = document.getElementById("decklist");
   const simCountInput = document.getElementById("sim-count");
@@ -107,16 +109,17 @@
     };
   }
 
-  function buildQueuePayload(validated) {
+  function buildAnalyzePayload(validated) {
     return {
-      source: "fizban-web-portal",
-      queuedAtUtc: new Date().toISOString(),
       commander: validated.commander,
       simulations: simCountInput ? simCountInput.value : "50k",
-      turnCap: turnCapInput ? turnCapInput.value : "10",
+      turnCap: parseInt(turnCapInput ? turnCapInput.value : "10", 10),
       archetype: archetypeInput ? archetypeInput.value : "Auto Detect",
       decklistText: decklistInput ? decklistInput.value : "",
-      cardCount: validated.totalCards
+      cardCount: validated.totalCards,
+      onDraw: false,
+      isCedh: false,
+      theme: ""
     };
   }
 
@@ -138,34 +141,73 @@
     runResult.classList.add(isError ? "result-error" : "result-success");
   }
 
-  validateQueueBtn.addEventListener("click", function () {
+  async function callLocalAnalyzer(payload) {
+    const response = await fetch(API_BASE_URL + "/analyze", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json"
+      },
+      body: JSON.stringify(payload)
+    });
+
+    let data = null;
+    try {
+      data = await response.json();
+    } catch (error) {
+      data = null;
+    }
+
+    if (!response.ok) {
+      const errorMessage = data && data.error ? data.error : "Analyzer request failed.";
+      throw new Error(errorMessage);
+    }
+
+    return data;
+  }
+
+  function setButtonsBusy(isBusy) {
+    validateQueueBtn.disabled = isBusy;
+    exportInputBtn.disabled = isBusy;
+    validateQueueBtn.textContent = isBusy ? "Running Fizban..." : "Run Full Analysis";
+  }
+
+  validateQueueBtn.addEventListener("click", async function () {
     const validated = validateInput();
     if (!validated.isValid) {
       setResult("Validation failed:\n- " + validated.errors.join("\n- "), true);
       return;
     }
 
-    const payload = buildQueuePayload(validated);
-    const payloadJson = JSON.stringify(payload, null, 2);
+    setButtonsBusy(true);
+    setResult("Validation passed. Sending deck to local Fizban engine...", false);
 
     try {
-      localStorage.setItem("fizbanLastQueue", payloadJson);
+      const payload = buildAnalyzePayload(validated);
+      const data = await callLocalAnalyzer(payload);
+      if (!data || !data.success) {
+        const errors = data && Array.isArray(data.errors) ? data.errors : ["Analysis failed."];
+        setResult("Analysis failed:\n- " + errors.join("\n- "), true);
+        return;
+      }
+
+      const reportText = (data.reportText || "").trim();
+      if (!reportText) {
+        setResult("Analysis completed, but no report text was returned.", true);
+        return;
+      }
+
+      setResult(reportText, false);
     } catch (error) {
-      // Ignore storage failures in restricted contexts.
+      setResult(
+        "Could not reach local Fizban analyzer at " + API_BASE_URL + ".\n" +
+        "Start it with:\n" +
+        "dotnet run --project final/FinalProject/FinalProject.csproj -- --web --port 5057\n\n" +
+        "Error: " + (error && error.message ? error.message : String(error)),
+        true
+      );
+    } finally {
+      setButtonsBusy(false);
     }
-
-    const stamp = new Date().toISOString().replace(/[:T]/g, "-").slice(0, 16);
-    downloadTextFile("fizban-queue-" + stamp + ".json", payloadJson, "application/json");
-
-    setResult(
-      "Validation passed.\n\nQueued analysis payload exported as JSON.\n" +
-      "Card count: " + validated.totalCards + "\n" +
-      "Commander: " + validated.commander + "\n" +
-      "Simulations: " + payload.simulations + "\n" +
-      "Turn cap: " + payload.turnCap + "\n" +
-      "Archetype: " + payload.archetype,
-      false
-    );
   });
 
   exportInputBtn.addEventListener("click", function () {
