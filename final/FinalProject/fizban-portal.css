@@ -185,6 +185,16 @@ textarea {
   font-size: 0.9rem;
 }
 
+.result-success {
+  border-color: rgba(74, 222, 128, 0.7);
+  box-shadow: inset 0 0 0 1px rgba(74, 222, 128, 0.25);
+}
+
+.result-error {
+  border-color: rgba(248, 113, 113, 0.75);
+  box-shadow: inset 0 0 0 1px rgba(248, 113, 113, 0.25);
+}
+
 .quick {
   list-style: none;
   margin: 0;

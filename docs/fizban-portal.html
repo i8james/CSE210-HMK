@@ -64,8 +64,8 @@
         </div>
 
         <div class="actions">
-          <button class="button primary" type="button">Validate & Queue Analysis</button>
-          <button class="button alt" type="button">Export Input</button>
+          <button id="validate-queue-btn" class="button primary" type="button">Validate & Queue Analysis</button>
+          <button id="export-input-btn" class="button alt" type="button">Export Input</button>
           <button class="button ghost" type="button" onclick="window.location.href='../../develop.html'">Back to Course Portal</button>
         </div>
 
@@ -81,7 +81,7 @@
           <li><strong>Step 4:</strong> Review ramp, curve, and cut/add suggestions.</li>
         </ul>
 
-        <div class="result">Fizban Portal Ready.
+        <div id="run-result" class="result" aria-live="polite">Fizban Portal Ready.
 
 - Theme synced with desktop palette.
 - Intake controls configured.
@@ -92,5 +92,6 @@
 
     <p class="footer">Fizban's Fantastical Folio portal layer for CSE210 FinalProject.</p>
   </main>
+  <script src="fizban-portal.js"></script>
 </body>
 </html>
