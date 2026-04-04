@@ -20,9 +20,11 @@ internal sealed class FizbanAppSettings
     public string DeckText { get; set; } = string.Empty;
     public string GamesSelection { get; set; } = "100k";
     public string ArchetypeSelection { get; set; } = "Auto Detect";
+    public string OpponentProfileSelection { get; set; } = "Focused";
     public string EdhrecThemeSelection { get; set; } = "Auto Theme";
     public bool OnDraw { get; set; }
     public bool Cedh { get; set; }
+    public bool LightMode { get; set; }
 }
 
 internal static class FizbanSettingsStore

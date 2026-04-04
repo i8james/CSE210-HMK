@@ -17,13 +17,15 @@ internal sealed class GoldfishBot
     }
 
     private readonly DeckArchetype _archetype;
+    private readonly OpponentPodProfile _opponentProfile;
     private readonly string _primaryTribe;
     public int LearnedGames => _learningProfile.GamesPlayed;
 
-    public GoldfishBot(Deck deck, DeckArchetype archetype)
+    public GoldfishBot(Deck deck, DeckArchetype archetype, OpponentPodProfile opponentProfile)
     {
         _deck = deck;
         _archetype = archetype;
+        _opponentProfile = opponentProfile;
         _primaryTribe = DeckAnalysis.TryGetPrimaryTribe(deck, out string tribe, out _, out _) ? tribe : string.Empty;
         _learningProfile = GoldfishLearningStore.LoadProfile(deck);
     }
@@ -82,7 +84,7 @@ internal sealed class GoldfishBot
 
             while (true)
             {
-                var bestAction = ChooseBestAction(state);
+                var bestAction = ChooseBestAction(state, maxTurns);
                 if (bestAction == null || bestAction.Type == GoldfishActionType.PassPhase)
                     break;
 
@@ -199,12 +201,43 @@ internal sealed class GoldfishBot
         return new List<Card>();
     }
 
-    private static bool ShouldKeepOpeningHand(List<Card> hand, int mulligansTaken)
+    private bool ShouldKeepOpeningHand(List<Card> hand, int mulligansTaken)
     {
         int lands = hand.Count(card => card.IsLand);
         int cheapSpells = hand.Count(card => !card.IsLand && card.ManaCost <= 3);
         int rampPieces = hand.Count(card => DeckAnalysis.GetCategoryTags(card).Contains("Ramp"));
         int drawPieces = hand.Count(card => DeckAnalysis.GetCategoryTags(card).Contains("Card Draw"));
+        int interactionPieces = hand.Count(card =>
+        {
+            var tags = DeckAnalysis.GetCategoryTags(card);
+            return tags.Contains("Removal") || tags.Contains("Counterspell") || tags.Contains("Protection");
+        });
+
+        bool commanderIsExpensive = _deck.Commander != null && _deck.Commander.ManaCost >= 5;
+        int openingScore = 0;
+
+        if (lands >= 2 && lands <= 4)
+            openingScore += 36;
+        else if (lands == 1)
+            openingScore -= 18;
+        else if (lands >= 5)
+            openingScore -= 20;
+
+        openingScore += cheapSpells * 7;
+        openingScore += rampPieces * 10;
+        openingScore += drawPieces * 8;
+        openingScore += interactionPieces * 4;
+
+        if (commanderIsExpensive && rampPieces == 0)
+            openingScore -= 12;
+        if (_archetype == DeckArchetype.Combo)
+            openingScore += hand.Count(card => DeckAnalysis.GetCategoryTags(card).Contains("Tutor")) * 9;
+        if (_archetype == DeckArchetype.Spellslinger)
+            openingScore += hand.Count(card => DeckAnalysis.HasType(card, "Instant") || DeckAnalysis.HasType(card, "Sorcery")) * 3;
+        if (_archetype == DeckArchetype.Tribal && !string.IsNullOrWhiteSpace(_primaryTribe))
+            openingScore += hand.Count(card => DeckAnalysis.HasTribe(card, _primaryTribe)) * 4;
+
+        openingScore += (int)Math.Round(_learningProfile.CommanderBias * 0.6);
 
         if (lands >= 2 && lands <= 4 && cheapSpells >= 2)
             return true;
@@ -215,10 +248,17 @@ internal sealed class GoldfishBot
         if (mulligansTaken >= 1 && lands >= 2 && lands <= 5 && (cheapSpells >= 1 || drawPieces >= 1))
             return true;
 
-        return false;
+        int keepThreshold = mulligansTaken switch
+        {
+            0 => 42,
+            1 => 34,
+            _ => 28
+        };
+
+        return openingScore >= keepThreshold;
     }
 
-    private static List<Card> ChooseBottomCards(List<Card> hand, int count)
+    private List<Card> ChooseBottomCards(List<Card> hand, int count)
     {
         return hand
             .OrderBy(card => OpeningHandBottomScore(card))
@@ -226,20 +266,26 @@ internal sealed class GoldfishBot
             .ToList();
     }
 
-    private static int OpeningHandBottomScore(Card card)
+    private int OpeningHandBottomScore(Card card)
     {
         var tags = DeckAnalysis.GetCategoryTags(card);
         int score = 0;
         if (card.IsLand)
-            score += 40;
+            score += 34;
         if (tags.Contains("Ramp"))
-            score += 90;
+            score += 105;
         if (tags.Contains("Card Draw"))
-            score += 70;
+            score += 78;
         if (tags.Contains("Tutor"))
-            score += 65;
+            score += 82;
         if (tags.Contains("Removal") || tags.Contains("Counterspell"))
-            score -= 25;
+            score -= 18;
+        if (_archetype == DeckArchetype.Tribal && !string.IsNullOrWhiteSpace(_primaryTribe) && DeckAnalysis.HasTribe(card, _primaryTribe))
+            score += 24;
+        if (_archetype == DeckArchetype.Spellslinger && (DeckAnalysis.HasType(card, "Instant") || DeckAnalysis.HasType(card, "Sorcery")))
+            score += 14;
+        if (_learningProfile.CardPreferences.TryGetValue(card.Name ?? string.Empty, out double preference))
+            score += (int)Math.Round(preference * 4);
         score -= card.ManaCost * 5;
         return score;
     }
@@ -253,9 +299,9 @@ internal sealed class GoldfishBot
         }
     }
 
-    private GoldfishAction? ChooseBestAction(GoldfishGameState state)
+    private GoldfishAction? ChooseBestAction(GoldfishGameState state, int maxTurns)
     {
-        var bestPlan = BuildBestTurnPlan(state, 0, GetPlanningDepth(state));
+        var bestPlan = BuildBestTurnPlan(state, 0, GetPlanningDepth(state), maxTurns);
         if (!bestPlan.Sequence.Any())
             return null;
 
@@ -274,7 +320,7 @@ internal sealed class GoldfishBot
         return 1;
     }
 
-    private TurnPlanResult BuildBestTurnPlan(GoldfishGameState state, int depth, int maxDepth)
+    private TurnPlanResult BuildBestTurnPlan(GoldfishGameState state, int depth, int maxDepth, int maxTurns)
     {
         int baselineScore = EvaluatePlanningState(state);
         var best = new TurnPlanResult { Score = baselineScore };
@@ -304,7 +350,7 @@ internal sealed class GoldfishBot
 
             TurnPlanResult futurePlan;
             if (depth + 1 < maxDepth && GoldfishLegalActionGenerator.GetLegalActions(nextState).Any(action => action.Type != GoldfishActionType.PassPhase))
-                futurePlan = BuildBestTurnPlan(nextState, depth + 1, maxDepth);
+                futurePlan = BuildBestTurnPlan(nextState, depth + 1, maxDepth, maxTurns);
             else
                 futurePlan = new TurnPlanResult { Score = EvaluatePlanningState(nextState) };
 
@@ -330,6 +376,13 @@ internal sealed class GoldfishBot
         bool commanderOnBoard = state.Battlefield.Any(card => card.IsCommander);
         int commanderValue = commanderOnBoard ? ScoreCommanderPresence(state.Commander) : 0;
 
+        int profileTempoBias = _opponentProfile switch
+        {
+            OpponentPodProfile.Casual => -8,
+            OpponentPodProfile.HighPower => 12,
+            _ => 0
+        };
+
         return state.ManaSpent * 10
             + state.SpellsCast * 18
             + state.CardsDrawn * 12
@@ -339,7 +392,8 @@ internal sealed class GoldfishBot
             + comboPieces * 10
             + commanderValue
             - state.ManaAvailable * 8
-            - strandedExpensiveCards * 7;
+            - strandedExpensiveCards * 7
+            + profileTempoBias;
     }
 
     private int ScoreActionForPriority(GoldfishAction action, GoldfishGameState state)
@@ -657,14 +711,30 @@ internal sealed class GoldfishBot
         bool thisCardIsPiece = oracle.Contains("you win the game")
             || oracle.Contains("take an extra turn")
             || oracle.Contains("storm")
+            || oracle.Contains("infinite")
+            || oracle.Contains("for each") && oracle.Contains("whenever")
             || oracle.Contains("untap all")
             || (oracle.Contains("untap target") && (oracle.Contains("creature") || oracle.Contains("permanent")))
-            || (oracle.Contains("sacrifice") && (oracle.Contains(": add") || oracle.Contains(": draw") || oracle.Contains(": deal")));
+            || (oracle.Contains("sacrifice") && (oracle.Contains(": add") || oracle.Contains(": draw") || oracle.Contains(": deal")))
+            || (oracle.Contains("whenever") && (oracle.Contains("create") && oracle.Contains("token")))
+            || (oracle.Contains("whenever") && oracle.Contains("draw"));
 
         if (!thisCardIsPiece)
             return false;
 
-        return hand.Concat(battlefield).Any(other => !ReferenceEquals(other, card) && !string.IsNullOrWhiteSpace(other.OracleText));
+        return hand.Concat(battlefield).Any(other =>
+        {
+            if (ReferenceEquals(other, card) || string.IsNullOrWhiteSpace(other.OracleText))
+                return false;
+
+            string support = other.OracleText.ToLowerInvariant();
+            return support.Contains("untap")
+                || support.Contains("add {")
+                || support.Contains("draw")
+                || support.Contains("search your library")
+                || support.Contains("create") && support.Contains("token")
+                || support.Contains("each opponent loses");
+        });
     }
 
     private static bool CanRepresentInfiniteCombo(Card card, IReadOnlyCollection<Card> hand, IReadOnlyCollection<Card> battlefield)
@@ -690,7 +760,7 @@ internal sealed class GoldfishBot
 
             if (HasPersistentTutorEffect(permanent, state))
             {
-                var target = ChooseTutorTarget(state.Library, state.Hand, state.Battlefield, state.Turn);
+                var target = ChooseTutorTarget(state.Library, state.Hand, state.Battlefield, state.Turn, state.Turn + 3);
                 if (target != null)
                 {
                     state.Library.Remove(target);
@@ -815,7 +885,7 @@ internal sealed class GoldfishBot
 
         if (tags.Contains("Tutor"))
         {
-            var target = ChooseTutorTarget(library, hand, battlefield, turn);
+            var target = ChooseTutorTarget(library, hand, battlefield, turn, turn + 3);
             if (target != null)
             {
                 library.Remove(target);
@@ -915,7 +985,7 @@ internal sealed class GoldfishBot
         return card.ManaCost <= 2 ? 1 : 2;
     }
 
-    private Card? ChooseTutorTarget(List<Card> library, IReadOnlyCollection<Card> hand, IReadOnlyCollection<Card> battlefield, int turn)
+    private Card? ChooseTutorTarget(List<Card> library, IReadOnlyCollection<Card> hand, IReadOnlyCollection<Card> battlefield, int turn, int horizonTurn)
     {
         var libraryCards = library.Where(card => !card.IsLand).ToList();
         if (!libraryCards.Any())
@@ -925,21 +995,70 @@ internal sealed class GoldfishBot
         if (comboTarget != null)
             return comboTarget;
 
-        if (turn <= 3)
+        int battlefieldRamp = battlefield.Count(card => DeckAnalysis.GetCategoryTags(card).Contains("Ramp"));
+        int handLands = hand.Count(card => card.IsLand);
+        bool lowResources = hand.Count <= 3 || handLands <= 1;
+
+        if (turn <= 3 || handLands <= 1 || battlefieldRamp < 2)
         {
-            var ramp = libraryCards.FirstOrDefault(card => DeckAnalysis.GetCategoryTags(card).Contains("Ramp"));
+            var ramp = libraryCards
+                .Where(card => DeckAnalysis.GetCategoryTags(card).Contains("Ramp"))
+                .OrderBy(card => card.ManaCost)
+                .FirstOrDefault();
             if (ramp != null)
                 return ramp;
         }
 
-        var draw = libraryCards.FirstOrDefault(card => DeckAnalysis.GetCategoryTags(card).Contains("Card Draw"));
+        var draw = libraryCards
+            .Where(card => DeckAnalysis.GetCategoryTags(card).Contains("Card Draw"))
+            .OrderBy(card => card.ManaCost)
+            .FirstOrDefault();
         if (draw != null)
             return draw;
 
+        if (lowResources)
+        {
+            var cheapStabilizer = libraryCards
+                .Where(card => card.ManaCost <= 3)
+                .OrderByDescending(card => ProjectTutorTargetValue(card, hand, battlefield, turn, horizonTurn))
+                .ThenBy(card => card.ManaCost)
+                .FirstOrDefault();
+            if (cheapStabilizer != null)
+                return cheapStabilizer;
+        }
+
         return libraryCards
-            .OrderByDescending(card => ScoreCardForPriority(card, battlefield, hand, turn, turn + 2))
+            .OrderByDescending(card => ProjectTutorTargetValue(card, hand, battlefield, turn, horizonTurn))
             .ThenBy(card => card.ManaCost)
             .FirstOrDefault();
+    }
+
+    private int ProjectTutorTargetValue(Card candidate, IReadOnlyCollection<Card> hand, IReadOnlyCollection<Card> battlefield, int currentTurn, int horizonTurn)
+    {
+        int horizon = Math.Max(1, horizonTurn - currentTurn);
+        var tags = DeckAnalysis.GetCategoryTags(candidate);
+        string oracle = (candidate.OracleText ?? string.Empty).ToLowerInvariant();
+
+        int baseValue = ScoreCardForPriority(candidate, battlefield, hand, currentTurn, currentTurn + 2);
+        int recurringValue = 0;
+        if (DeckAnalysis.IsPermanent(candidate))
+        {
+            if (tags.Contains("Card Draw") && (oracle.Contains("whenever") || oracle.Contains("at the beginning")))
+                recurringValue += 8 * horizon;
+            if (tags.Contains("Ramp") && candidate.ManaCost <= 3)
+                recurringValue += 6 * horizon;
+            if (tags.Contains("Token Generation") && (oracle.Contains("whenever") || oracle.Contains("at the beginning")))
+                recurringValue += 4 * horizon;
+        }
+
+        int profileValue = _opponentProfile switch
+        {
+            OpponentPodProfile.Casual => tags.Contains("Card Draw") || tags.Contains("Token Generation") ? 10 : 0,
+            OpponentPodProfile.HighPower => tags.Contains("Tutor") || tags.Contains("Counterspell") || CanAdvanceCombo(candidate, hand, battlefield) ? 12 : 0,
+            _ => tags.Contains("Removal") || tags.Contains("Counterspell") ? 6 : 0
+        };
+
+        return baseValue + recurringValue + profileValue;
     }
 }
 
@@ -948,6 +1067,7 @@ public class DeckEvaluator
     private readonly Deck _deck;
     private readonly DeckArchetype _selectedArchetype;
     private readonly bool _isCedh;
+    private readonly OpponentPodProfile _opponentProfile;
     private readonly GoldfishLearningProfile _learningProfile;
 
     private sealed class ArchetypeTargets
@@ -977,17 +1097,18 @@ public class DeckEvaluator
         public List<string> Signals { get; init; } = new List<string>();
     }
 
-    public DeckEvaluator(Deck deck, DeckArchetype? archetypeOverride = null, bool isCedh = false)
+    public DeckEvaluator(Deck deck, DeckArchetype? archetypeOverride = null, bool isCedh = false, OpponentPodProfile opponentProfile = OpponentPodProfile.Focused)
     {
         _deck = deck;
         _isCedh = isCedh;
+        _opponentProfile = opponentProfile;
         _selectedArchetype = archetypeOverride ?? DeckAnalysis.DetectPrimaryArchetype(deck);
         _learningProfile = GoldfishLearningStore.LoadProfile(deck);
     }
 
     public EvaluationResults RunSimulations(int numSimulations, int maxTurns, bool onDraw = false, Action<int>? progressCallback = null, CancellationToken cancellationToken = default)
     {
-        var bot = new GoldfishBot(_deck, _selectedArchetype);
+        var bot = new GoldfishBot(_deck, _selectedArchetype, _opponentProfile);
         var results = new List<SimulationResult>(numSimulations);
         int lastReported = -1;
 
@@ -1013,6 +1134,7 @@ public class DeckEvaluator
         {
             SelectedArchetype = _selectedArchetype,
             DetectedArchetype = DeckAnalysis.DetectPrimaryArchetype(_deck),
+            OpponentProfile = _opponentProfile,
             AverageMissedLands = results.Average(result => result.MissedLands),
             AverageLandsPlayed = results.Average(result => result.LandsPlayed),
             AverageCardsPlayable = results.Average(result => result.CardsPlayable),
@@ -1040,6 +1162,54 @@ public class DeckEvaluator
             SpellbookComboAssemblyRate = results.Count(result => result.SpellbookComboAssemblies.Any()) * 100.0 / results.Count,
             SamplePlayPatterns = results.SelectMany(result => result.ActionLog).Where(log => !string.IsNullOrWhiteSpace(log)).Take(8).ToList(),
             LearningGamesSeen = bot.LearnedGames
+        };
+
+        evaluation.TempoScore = Math.Clamp(
+            (evaluation.AverageEarlyTurnActions * 2.2)
+            + (evaluation.AverageManaEfficiency / 22.0)
+            + (10.0 - Math.Min(10.0, evaluation.AverageIdleTurns * 2.5))
+            + (evaluation.CommanderCastRate / 30.0),
+            0,
+            10);
+
+        evaluation.CardAdvantageScore = Math.Clamp(
+            (DeckAnalysis.CountRoleCards(_deck, "Card Draw") / 1.8)
+            + (evaluation.AverageSpellsCast / 2.1)
+            + (evaluation.AverageTriggeredAbilitiesResolved / 2.4),
+            0,
+            10);
+
+        int interactionDensity = DeckAnalysis.CountRoleCards(_deck, "Removal") + DeckAnalysis.CountRoleCards(_deck, "Counterspell");
+        evaluation.InteractionScore = Math.Clamp(
+            (interactionDensity / 1.9)
+            + (evaluation.AverageActivatedAbilitiesUsed / 3.5)
+            + (evaluation.InfiniteComboWinRate > 0 ? 1.0 : 0),
+            0,
+            10);
+
+        evaluation.TempoSummary = evaluation.TempoScore >= 7.5
+            ? "Fast deployment and low downtime across turns."
+            : evaluation.TempoScore >= 5
+                ? "Reasonable pace, but some turns still leave mana on the table."
+                : "Tempo is lagging; prioritize more early plays and cleaner sequencing.";
+
+        evaluation.CardAdvantageSummary = evaluation.CardAdvantageScore >= 7.5
+            ? "Card flow engines are consistently keeping gas in hand."
+            : evaluation.CardAdvantageScore >= 5
+                ? "Moderate card flow; adding another repeatable draw engine could help."
+                : "Card flow is thin; add reliable draw/tutor effects.";
+
+        evaluation.InteractionSummary = evaluation.InteractionScore >= 7.5
+            ? "Interaction package can usually contest opposing game plans."
+            : evaluation.InteractionScore >= 5
+                ? "Interaction is serviceable but may miss key high-pressure turns."
+                : "Interaction density is low for contested pods.";
+
+        evaluation.OpponentProfileSummary = _opponentProfile switch
+        {
+            OpponentPodProfile.Casual => "Modeled for battlecruiser pods: values sustained advantage and resilient board development.",
+            OpponentPodProfile.HighPower => "Modeled for high-power pods: prioritizes speed, protection, and compact win lines.",
+            _ => "Modeled for focused pods: balances proactive sequencing with interactive flexibility."
         };
 
         evaluation.IsCedh = _isCedh;
@@ -1073,6 +1243,18 @@ public class DeckEvaluator
         double score = 1.5;
         var positiveSignals = new List<string>();
         var limitingSignals = new List<string>();
+
+        switch (_opponentProfile)
+        {
+            case OpponentPodProfile.Casual:
+                score -= 0.2;
+                positiveSignals.Add("Casual pod profile: consistency favored over pure speed.");
+                break;
+            case OpponentPodProfile.HighPower:
+                score += 0.5;
+                positiveSignals.Add("High-power pod profile: speed and compact interaction weighted higher.");
+                break;
+        }
 
         if (comboCount >= 6)
         {
@@ -1463,6 +1645,13 @@ public class DeckEvaluator
         if (_isCedh)
             GenerateCedhRecommendations(results, deck);
 
+        int tutorHorizon = _opponentProfile switch
+        {
+            OpponentPodProfile.Casual => 4,
+            OpponentPodProfile.HighPower => 2,
+            _ => 3
+        };
+
         void AddSuggestion(DeckSuggestionKind kind, string title, string details, double confidence, string roleTag = "", string source = "Simulator", IEnumerable<string>? adds = null, IEnumerable<string>? cuts = null, Dictionary<string, string>? addReasons = null, Dictionary<string, string>? cutReasons = null)
         {
             results.Suggestions.Add(new DeckSuggestion
@@ -1702,8 +1891,142 @@ public class DeckEvaluator
             return (lands.Select(land => land.Name).ToList(), LandRecommendationEngine.BuildAddReasons(lands));
         }
 
+        static string NormalizeColorCode(string? raw)
+        {
+            if (string.IsNullOrWhiteSpace(raw))
+                return string.Empty;
+            return raw.Trim().ToUpperInvariant() switch
+            {
+                "W" => "W",
+                "U" => "U",
+                "B" => "B",
+                "R" => "R",
+                "G" => "G",
+                _ => string.Empty
+            };
+        }
+
+        static string DescribeColorName(string color)
+        {
+            return color switch
+            {
+                "W" => "white",
+                "U" => "blue",
+                "B" => "black",
+                "R" => "red",
+                "G" => "green",
+                _ => "color"
+            };
+        }
+
+        static string GetBasicLandForColor(string color)
+        {
+            return color switch
+            {
+                "W" => "Plains",
+                "U" => "Island",
+                "B" => "Swamp",
+                "R" => "Mountain",
+                "G" => "Forest",
+                _ => "basic land"
+            };
+        }
+
+        var commanderIdentity = deck.GetCommanderColorIdentity()
+            .Select(NormalizeColorCode)
+            .Where(code => code.Length > 0)
+            .ToHashSet(StringComparer.OrdinalIgnoreCase);
+
+        Dictionary<string, int> BuildSpellColorDemand()
+        {
+            var demand = new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase)
+            {
+                ["W"] = 0,
+                ["U"] = 0,
+                ["B"] = 0,
+                ["R"] = 0,
+                ["G"] = 0
+            };
+
+            foreach (var card in deck.Cards.Where(card => !card.IsLand && !card.IsCommander))
+            {
+                var colors = card.ColorIdentity.Count > 0 ? card.ColorIdentity : card.Colors;
+                foreach (var color in colors.Select(NormalizeColorCode).Where(code => demand.ContainsKey(code)).Distinct(StringComparer.OrdinalIgnoreCase))
+                    demand[color]++;
+            }
+
+            return demand;
+        }
+
+        Dictionary<string, int> BuildLandColorProduction()
+        {
+            var production = new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase)
+            {
+                ["W"] = 0,
+                ["U"] = 0,
+                ["B"] = 0,
+                ["R"] = 0,
+                ["G"] = 0
+            };
+
+            void AddColor(string color)
+            {
+                if (production.ContainsKey(color))
+                    production[color]++;
+            }
+
+            foreach (var land in deck.Cards.Where(card => card.IsLand))
+            {
+                bool foundExplicitSource = false;
+
+                var identityColors = land.ColorIdentity.Count > 0 ? land.ColorIdentity : land.Colors;
+                foreach (var color in identityColors.Select(NormalizeColorCode).Where(code => production.ContainsKey(code)).Distinct(StringComparer.OrdinalIgnoreCase))
+                {
+                    AddColor(color);
+                    foundExplicitSource = true;
+                }
+
+                string type = land.Type ?? string.Empty;
+                if (type.Contains("Plains", StringComparison.OrdinalIgnoreCase)) { AddColor("W"); foundExplicitSource = true; }
+                if (type.Contains("Island", StringComparison.OrdinalIgnoreCase)) { AddColor("U"); foundExplicitSource = true; }
+                if (type.Contains("Swamp", StringComparison.OrdinalIgnoreCase)) { AddColor("B"); foundExplicitSource = true; }
+                if (type.Contains("Mountain", StringComparison.OrdinalIgnoreCase)) { AddColor("R"); foundExplicitSource = true; }
+                if (type.Contains("Forest", StringComparison.OrdinalIgnoreCase)) { AddColor("G"); foundExplicitSource = true; }
+
+                string oracle = (land.OracleText ?? string.Empty).ToLowerInvariant();
+                if (oracle.Contains("add one mana of any color") || oracle.Contains("add one mana of any colour") || oracle.Contains("add one mana of any color in your commander's color identity"))
+                {
+                    var flexibleColors = commanderIdentity.Any()
+                        ? commanderIdentity
+                        : new HashSet<string>(new[] { "W", "U", "B", "R", "G" }, StringComparer.OrdinalIgnoreCase);
+                    foreach (var color in flexibleColors)
+                        AddColor(color);
+                    foundExplicitSource = true;
+                }
+
+                if (oracle.Contains("{w}")) { AddColor("W"); foundExplicitSource = true; }
+                if (oracle.Contains("{u}")) { AddColor("U"); foundExplicitSource = true; }
+                if (oracle.Contains("{b}")) { AddColor("B"); foundExplicitSource = true; }
+                if (oracle.Contains("{r}")) { AddColor("R"); foundExplicitSource = true; }
+                if (oracle.Contains("{g}")) { AddColor("G"); foundExplicitSource = true; }
+
+                if (!foundExplicitSource && land.Name != null)
+                {
+                    string name = land.Name.Trim();
+                    if (name.Equals("Plains", StringComparison.OrdinalIgnoreCase)) AddColor("W");
+                    else if (name.Equals("Island", StringComparison.OrdinalIgnoreCase)) AddColor("U");
+                    else if (name.Equals("Swamp", StringComparison.OrdinalIgnoreCase)) AddColor("B");
+                    else if (name.Equals("Mountain", StringComparison.OrdinalIgnoreCase)) AddColor("R");
+                    else if (name.Equals("Forest", StringComparison.OrdinalIgnoreCase)) AddColor("G");
+                }
+            }
+
+            return production;
+        }
+
         results.Recommendations.Add("\n=== MANA & LAND ANALYSIS ===");
         results.Recommendations.Add($"Deck archetype model: {archetype}");
+        results.Recommendations.Add($"Opponent pod profile: {_opponentProfile} (tutor planning horizon: {tutorHorizon} turns)");
         if (results.DetectedArchetype != results.SelectedArchetype)
             results.Recommendations.Add($"Auto-detected archetype: {results.DetectedArchetype} (recommendations are using the selected model instead).");
         results.Recommendations.Add($"Plan focus: {targets.FocusSummary}");
@@ -1764,10 +2087,80 @@ public class DeckEvaluator
         else
             results.Recommendations.Add($"✓ Lands optimal: {landCount} lands ({landPercentage:F1}%) - {results.AverageMissedLands:F2} avg missed drops");
 
+        var colorDemand = BuildSpellColorDemand();
+        var colorProduction = BuildLandColorProduction();
+        int totalColorDemand = colorDemand.Values.Sum();
+        int totalColorProduction = colorProduction.Values.Sum();
+        var colorShortages = new List<(string Color, int Demand, int Sources, int SuggestedAdds)>();
+
+        if (totalColorDemand > 0 && totalColorProduction > 0)
+        {
+            foreach (string color in new[] { "W", "U", "B", "R", "G" })
+            {
+                int demand = colorDemand.GetValueOrDefault(color, 0);
+                if (demand <= 0)
+                    continue;
+
+                int sources = colorProduction.GetValueOrDefault(color, 0);
+                double demandShare = demand / (double)totalColorDemand;
+                double sourceShare = sources / (double)totalColorProduction;
+                int targetSources = Math.Max(1, (int)Math.Ceiling(landCount * demandShare));
+                int deficit = Math.Max(0, targetSources - sources);
+
+                bool hardMissing = sources == 0 && demand >= 2;
+                bool softMissing = sourceShare + 0.08 < demandShare && deficit > 0;
+                if (hardMissing || softMissing)
+                    colorShortages.Add((color, demand, sources, Math.Min(4, Math.Max(1, deficit))));
+            }
+        }
+
+        if (colorShortages.Any())
+        {
+            var shortageText = string.Join(", ", colorShortages.Select(shortage =>
+                $"{DescribeColorName(shortage.Color)} demand {shortage.Demand} vs {shortage.Sources} source{(shortage.Sources == 1 ? string.Empty : "s")}"));
+            results.Recommendations.Add($"⚠️  Color source mismatch detected: {shortageText}.");
+
+            int neededAdds = Math.Min(5, colorShortages.Sum(shortage => shortage.SuggestedAdds));
+            var landAdds = GetRecommendedLands(Math.Max(2, neededAdds));
+            var cuts = RankCutCandidates("Land", 5, minManaCost: 4);
+
+            foreach (var shortage in colorShortages.OrderByDescending(entry => entry.SuggestedAdds).ThenBy(entry => entry.Color).Take(2))
+            {
+                string basicLand = GetBasicLandForColor(shortage.Color);
+                if (!landAdds.Names.Any(name => name.Equals(basicLand, StringComparison.OrdinalIgnoreCase)))
+                    landAdds.Names.Add(basicLand);
+                landAdds.Reasons[basicLand] = $"Directly increases {DescribeColorName(shortage.Color)} sources to meet current spell-color demand.";
+            }
+
+            AddSuggestion(
+                DeckSuggestionKind.Swap,
+                "Fix land color balance",
+                "Your lands are under-producing one or more colors relative to the spell mix. Shift a few generic lands into color-fixing lands or matching basics for smoother casting.",
+                0.91,
+                roleTag: "Land",
+                adds: landAdds.Names,
+                cuts: cuts.Names,
+                addReasons: landAdds.Reasons,
+                cutReasons: cuts.Reasons);
+        }
+        else if (totalColorDemand > 0)
+        {
+            results.Recommendations.Add("✓ Land color production is aligned with your spell-color demand.");
+        }
+
         if (results.AverageMulligans > 0.75)
             results.Recommendations.Add($"⚠️ Opening hands are shaky: average mulligans {results.AverageMulligans:F2}. Add early plays, more lands, or smoother ramp.");
         else
             results.Recommendations.Add($"✓ Opening hand stability looks solid: average mulligans {results.AverageMulligans:F2}.");
+
+        results.Recommendations.Add("\n=== STRATEGIC LINE PLANNING ===");
+        results.Recommendations.Add($"Tutor lines are projected across a {tutorHorizon}-turn horizon in this pod mode.");
+        if (_opponentProfile == OpponentPodProfile.HighPower)
+            results.Recommendations.Add("High-power heuristic: prioritize lines that either assemble combo quickly or hold cheap protection during the winning turn.");
+        else if (_opponentProfile == OpponentPodProfile.Casual)
+            results.Recommendations.Add("Casual heuristic: prioritize durable value engines and repeatable draw over narrow all-in combo pivots.");
+        else
+            results.Recommendations.Add("Focused heuristic: prioritize proactive value while keeping enough interaction to survive fast starts.");
 
         if (results.SpellbookKnownCombos.Any())
             results.Recommendations.Add($"Spellbook combos found in list: {string.Join(", ", results.SpellbookKnownCombos.Take(3))}");

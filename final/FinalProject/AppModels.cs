@@ -129,6 +129,13 @@ public class SimulationResult
     public List<string> SpellbookComboAssemblies { get; set; } = new List<string>();
 }
 
+public enum OpponentPodProfile
+{
+    Casual,
+    Focused,
+    HighPower
+}
+
 public class EvaluationResults
 {
     public DeckArchetype SelectedArchetype { get; set; }
@@ -137,6 +144,14 @@ public class EvaluationResults
     public string EstimatedBracket { get; set; } = string.Empty;
     public string PowerSummary { get; set; } = string.Empty;
     public List<string> PowerSignals { get; set; } = new List<string>();
+    public OpponentPodProfile OpponentProfile { get; set; } = OpponentPodProfile.Focused;
+    public string OpponentProfileSummary { get; set; } = string.Empty;
+    public double TempoScore { get; set; }
+    public double CardAdvantageScore { get; set; }
+    public double InteractionScore { get; set; }
+    public string TempoSummary { get; set; } = string.Empty;
+    public string CardAdvantageSummary { get; set; } = string.Empty;
+    public string InteractionSummary { get; set; } = string.Empty;
     public double AverageMissedLands { get; set; }
     public double AverageLandsPlayed { get; set; }
     public double AverageCardsPlayable { get; set; }
@@ -191,21 +206,3 @@ public class DeckSuggestion
     public Dictionary<string, string> CutReasons { get; set; } = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
 }
 
-public class PortalAnalysisRequest
-{
-    public string Commander { get; set; } = string.Empty;
-    public string DecklistText { get; set; } = string.Empty;
-    public string Simulations { get; set; } = "50k";
-    public int TurnCap { get; set; } = 10;
-    public string Archetype { get; set; } = "Auto Detect";
-    public bool OnDraw { get; set; }
-    public bool IsCedh { get; set; }
-    public string Theme { get; set; } = string.Empty;
-}
-
-public class PortalAnalysisResponse
-{
-    public bool Success { get; set; }
-    public string ReportText { get; set; } = string.Empty;
-    public List<string> Errors { get; set; } = new List<string>();
-}
