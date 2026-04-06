@@ -1,15 +1,15 @@
 [
   {
     "Name": "Arcane Signet",
-    "TimesSeenCount": 14,
+    "TimesSeenCount": 18,
     "TimesInLegalColorIdentity": 0,
-    "LastSeenDeckDateTime": "2026-04-04T09:03:51.1522854Z",
+    "LastSeenDeckDateTime": "2026-04-04T20:25:42.7792145Z",
     "ArchetypeAppearances": {
       "Spellslinger": 4,
-      "Combo": 10
+      "Combo": 14
     },
     "RoleTagAppearances": {
-      "Artifact": 14
+      "Artifact": 18
     }
   },
   {
@@ -344,16 +344,16 @@
   },
   {
     "Name": "Maskwood Nexus",
-    "TimesSeenCount": 11,
+    "TimesSeenCount": 15,
     "TimesInLegalColorIdentity": 0,
-    "LastSeenDeckDateTime": "2026-04-04T09:03:51.1523192Z",
+    "LastSeenDeckDateTime": "2026-04-04T20:25:42.7792466Z",
     "ArchetypeAppearances": {
       "Spellslinger": 4,
-      "Combo": 7
+      "Combo": 11
     },
     "RoleTagAppearances": {
-      "Artifact": 11,
-      "Token Generation": 11
+      "Artifact": 15,
+      "Token Generation": 15
     }
   },
   {
@@ -629,16 +629,16 @@
   },
   {
     "Name": "Sol Ring",
-    "TimesSeenCount": 18,
+    "TimesSeenCount": 22,
     "TimesInLegalColorIdentity": 0,
-    "LastSeenDeckDateTime": "2026-04-04T09:03:51.1523333Z",
+    "LastSeenDeckDateTime": "2026-04-04T20:25:42.7792623Z",
     "ArchetypeAppearances": {
       "Spellslinger": 4,
-      "Combo": 14
+      "Combo": 18
     },
     "RoleTagAppearances": {
-      "Artifact": 18,
-      "Ramp": 18
+      "Artifact": 22,
+      "Ramp": 22
     }
   },
   {
@@ -2214,14 +2214,14 @@
   },
   {
     "Name": "Fellwar Stone",
-    "TimesSeenCount": 4,
+    "TimesSeenCount": 8,
     "TimesInLegalColorIdentity": 0,
-    "LastSeenDeckDateTime": "2026-04-04T09:03:51.1523038Z",
+    "LastSeenDeckDateTime": "2026-04-04T20:25:42.7792294Z",
     "ArchetypeAppearances": {
-      "Combo": 4
+      "Combo": 8
     },
     "RoleTagAppearances": {
-      "Artifact": 4
+      "Artifact": 8
     }
   },
   {
@@ -2853,777 +2853,777 @@
   },
   {
     "Name": "Absorb Identity",
-    "TimesSeenCount": 2,
-    "TimesInLegalColorIdentity": 2,
-    "LastSeenDeckDateTime": "2026-04-04T09:03:51.1522788Z",
+    "TimesSeenCount": 6,
+    "TimesInLegalColorIdentity": 6,
+    "LastSeenDeckDateTime": "2026-04-04T20:25:42.7792109Z",
     "ArchetypeAppearances": {
-      "Combo": 2
+      "Combo": 6
     },
     "RoleTagAppearances": {
-      "Instant": 2
+      "Instant": 6
     }
   },
   {
     "Name": "Amoeboid Changeling",
-    "TimesSeenCount": 2,
-    "TimesInLegalColorIdentity": 2,
-    "LastSeenDeckDateTime": "2026-04-04T09:03:51.1522843Z",
+    "TimesSeenCount": 6,
+    "TimesInLegalColorIdentity": 6,
+    "LastSeenDeckDateTime": "2026-04-04T20:25:42.7792134Z",
     "ArchetypeAppearances": {
-      "Combo": 2
+      "Combo": 6
     },
     "RoleTagAppearances": {
-      "Creature": 2,
-      "Tribe:Shapeshifter": 2
+      "Creature": 6,
+      "Tribe:Shapeshifter": 6
     }
   },
   {
     "Name": "Avian Changeling",
-    "TimesSeenCount": 2,
-    "TimesInLegalColorIdentity": 2,
-    "LastSeenDeckDateTime": "2026-04-04T09:03:51.1522867Z",
+    "TimesSeenCount": 6,
+    "TimesInLegalColorIdentity": 6,
+    "LastSeenDeckDateTime": "2026-04-04T20:25:42.7792157Z",
     "ArchetypeAppearances": {
-      "Combo": 2
+      "Combo": 6
     },
     "RoleTagAppearances": {
-      "Creature": 2,
-      "Tribe:Shapeshifter": 2,
-      "Flying": 2
+      "Creature": 6,
+      "Tribe:Shapeshifter": 6,
+      "Flying": 6
     }
   },
   {
     "Name": "Blades of Velis Vel",
-    "TimesSeenCount": 2,
-    "TimesInLegalColorIdentity": 2,
-    "LastSeenDeckDateTime": "2026-04-04T09:03:51.1522876Z",
+    "TimesSeenCount": 6,
+    "TimesInLegalColorIdentity": 6,
+    "LastSeenDeckDateTime": "2026-04-04T20:25:42.7792164Z",
     "ArchetypeAppearances": {
-      "Combo": 2
+      "Combo": 6
     },
     "RoleTagAppearances": {
-      "Instant": 2
+      "Instant": 6
     }
   },
   {
     "Name": "Chameleon Colossus",
-    "TimesSeenCount": 2,
-    "TimesInLegalColorIdentity": 2,
-    "LastSeenDeckDateTime": "2026-04-04T09:03:51.1522889Z",
+    "TimesSeenCount": 6,
+    "TimesInLegalColorIdentity": 6,
+    "LastSeenDeckDateTime": "2026-04-04T20:25:42.7792174Z",
     "ArchetypeAppearances": {
-      "Combo": 2
+      "Combo": 6
     },
     "RoleTagAppearances": {
-      "Creature": 2,
-      "Protection": 2,
-      "Tribe:Shapeshifter": 2
+      "Creature": 6,
+      "Protection": 6,
+      "Tribe:Shapeshifter": 6
     }
   },
   {
     "Name": "Changeling Outcast",
-    "TimesSeenCount": 2,
-    "TimesInLegalColorIdentity": 2,
-    "LastSeenDeckDateTime": "2026-04-04T09:03:51.1522902Z",
+    "TimesSeenCount": 6,
+    "TimesInLegalColorIdentity": 6,
+    "LastSeenDeckDateTime": "2026-04-04T20:25:42.7792183Z",
     "ArchetypeAppearances": {
-      "Combo": 2
+      "Combo": 6
     },
     "RoleTagAppearances": {
-      "Creature": 2,
-      "Tribe:Shapeshifter": 2
+      "Creature": 6,
+      "Tribe:Shapeshifter": 6
     }
   },
   {
     "Name": "Choco, Seeker of Paradise",
-    "TimesSeenCount": 2,
-    "TimesInLegalColorIdentity": 2,
-    "LastSeenDeckDateTime": "2026-04-04T09:03:51.1522917Z",
+    "TimesSeenCount": 6,
+    "TimesInLegalColorIdentity": 6,
+    "LastSeenDeckDateTime": "2026-04-04T20:25:42.7792191Z",
     "ArchetypeAppearances": {
-      "Combo": 2
+      "Combo": 6
     },
     "RoleTagAppearances": {
-      "Creature": 2,
-      "Tribe:Bird": 2
+      "Creature": 6,
+      "Tribe:Bird": 6
     }
   },
   {
     "Name": "Chomping Changeling",
-    "TimesSeenCount": 2,
-    "TimesInLegalColorIdentity": 2,
-    "LastSeenDeckDateTime": "2026-04-04T09:03:51.1522926Z",
+    "TimesSeenCount": 6,
+    "TimesInLegalColorIdentity": 6,
+    "LastSeenDeckDateTime": "2026-04-04T20:25:42.7792201Z",
     "ArchetypeAppearances": {
-      "Combo": 2
+      "Combo": 6
     },
     "RoleTagAppearances": {
-      "Creature": 2,
-      "Removal": 2,
-      "Tribe:Shapeshifter": 2
+      "Creature": 6,
+      "Removal": 6,
+      "Tribe:Shapeshifter": 6
     }
   },
   {
     "Name": "Cloudshredder Sliver",
-    "TimesSeenCount": 2,
-    "TimesInLegalColorIdentity": 2,
-    "LastSeenDeckDateTime": "2026-04-04T09:03:51.1522942Z",
+    "TimesSeenCount": 6,
+    "TimesInLegalColorIdentity": 6,
+    "LastSeenDeckDateTime": "2026-04-04T20:25:42.7792213Z",
     "ArchetypeAppearances": {
-      "Combo": 2
+      "Combo": 6
     },
     "RoleTagAppearances": {
-      "Creature": 2,
-      "Tribe:Sliver": 2,
-      "Flying": 2,
-      "Haste": 2
+      "Creature": 6,
+      "Tribe:Sliver": 6,
+      "Flying": 6,
+      "Haste": 6
     }
   },
   {
     "Name": "Coveted Prize",
-    "TimesSeenCount": 2,
-    "TimesInLegalColorIdentity": 2,
-    "LastSeenDeckDateTime": "2026-04-04T09:03:51.1522957Z",
+    "TimesSeenCount": 6,
+    "TimesInLegalColorIdentity": 6,
+    "LastSeenDeckDateTime": "2026-04-04T20:25:42.7792228Z",
     "ArchetypeAppearances": {
-      "Combo": 2
+      "Combo": 6
     },
     "RoleTagAppearances": {
-      "Sorcery": 2,
-      "Tutor": 2
+      "Sorcery": 6,
+      "Tutor": 6
     }
   },
   {
     "Name": "Crib Swap",
-    "TimesSeenCount": 2,
-    "TimesInLegalColorIdentity": 2,
-    "LastSeenDeckDateTime": "2026-04-04T09:03:51.1522966Z",
+    "TimesSeenCount": 6,
+    "TimesInLegalColorIdentity": 6,
+    "LastSeenDeckDateTime": "2026-04-04T20:25:42.7792237Z",
     "ArchetypeAppearances": {
-      "Combo": 2
+      "Combo": 6
     },
     "RoleTagAppearances": {
-      "Instant": 2,
-      "Removal": 2,
-      "Token Generation": 2
+      "Instant": 6,
+      "Removal": 6,
+      "Token Generation": 6
     }
   },
   {
     "Name": "Descendants\u0027 Path",
-    "TimesSeenCount": 2,
-    "TimesInLegalColorIdentity": 2,
-    "LastSeenDeckDateTime": "2026-04-04T09:03:51.1522972Z",
+    "TimesSeenCount": 6,
+    "TimesInLegalColorIdentity": 6,
+    "LastSeenDeckDateTime": "2026-04-04T20:25:42.7792243Z",
     "ArchetypeAppearances": {
-      "Combo": 2
+      "Combo": 6
     },
     "RoleTagAppearances": {
-      "Enchantment": 2
+      "Enchantment": 6
     }
   },
   {
     "Name": "Dragon Tempest",
-    "TimesSeenCount": 2,
-    "TimesInLegalColorIdentity": 2,
-    "LastSeenDeckDateTime": "2026-04-04T09:03:51.1522997Z",
+    "TimesSeenCount": 6,
+    "TimesInLegalColorIdentity": 6,
+    "LastSeenDeckDateTime": "2026-04-04T20:25:42.7792251Z",
     "ArchetypeAppearances": {
-      "Combo": 2
+      "Combo": 6
     },
     "RoleTagAppearances": {
-      "Enchantment": 2,
-      "Removal": 2
+      "Enchantment": 6,
+      "Removal": 6
     }
   },
   {
     "Name": "Dragon\u0027s Hoard",
-    "TimesSeenCount": 2,
+    "TimesSeenCount": 6,
     "TimesInLegalColorIdentity": 0,
-    "LastSeenDeckDateTime": "2026-04-04T09:03:51.1523004Z",
+    "LastSeenDeckDateTime": "2026-04-04T20:25:42.7792259Z",
     "ArchetypeAppearances": {
-      "Combo": 2
+      "Combo": 6
     },
     "RoleTagAppearances": {
-      "Artifact": 2,
-      "Card Draw": 2
+      "Artifact": 6,
+      "Card Draw": 6
     }
   },
   {
     "Name": "Drogskol Captain",
-    "TimesSeenCount": 2,
-    "TimesInLegalColorIdentity": 2,
-    "LastSeenDeckDateTime": "2026-04-04T09:03:51.1523018Z",
+    "TimesSeenCount": 6,
+    "TimesInLegalColorIdentity": 6,
+    "LastSeenDeckDateTime": "2026-04-04T20:25:42.7792274Z",
     "ArchetypeAppearances": {
-      "Combo": 2
+      "Combo": 6
     },
     "RoleTagAppearances": {
-      "Creature": 2,
-      "Protection": 2,
-      "Tribe:Spirit": 2,
-      "Tribe:Soldier": 2,
-      "Flying": 2,
-      "Hexproof": 2
+      "Creature": 6,
+      "Protection": 6,
+      "Tribe:Spirit": 6,
+      "Tribe:Soldier": 6,
+      "Flying": 6,
+      "Hexproof": 6
     }
   },
   {
     "Name": "Dwight o\u0027 Lantern",
-    "TimesSeenCount": 2,
+    "TimesSeenCount": 6,
     "TimesInLegalColorIdentity": 0,
-    "LastSeenDeckDateTime": "2026-04-04T09:03:51.1523023Z",
+    "LastSeenDeckDateTime": "2026-04-04T20:25:42.7792278Z",
     "ArchetypeAppearances": {
-      "Combo": 2
+      "Combo": 6
     },
     "RoleTagAppearances": {
-      "Unknown": 2
+      "Unknown": 6
     }
   },
   {
     "Name": "Farseek",
-    "TimesSeenCount": 2,
-    "TimesInLegalColorIdentity": 2,
-    "LastSeenDeckDateTime": "2026-04-04T09:03:51.152303Z",
+    "TimesSeenCount": 6,
+    "TimesInLegalColorIdentity": 6,
+    "LastSeenDeckDateTime": "2026-04-04T20:25:42.7792285Z",
     "ArchetypeAppearances": {
-      "Combo": 2
+      "Combo": 6
     },
     "RoleTagAppearances": {
-      "Sorcery": 2,
-      "Tutor": 2
+      "Sorcery": 6,
+      "Tutor": 6
     }
   },
   {
     "Name": "Firdoch Core",
-    "TimesSeenCount": 2,
+    "TimesSeenCount": 6,
     "TimesInLegalColorIdentity": 0,
-    "LastSeenDeckDateTime": "2026-04-04T09:03:51.152305Z",
+    "LastSeenDeckDateTime": "2026-04-04T20:25:42.7792304Z",
     "ArchetypeAppearances": {
-      "Combo": 2
+      "Combo": 6
     },
     "RoleTagAppearances": {
-      "Artifact": 2
+      "Artifact": 6
     }
   },
   {
     "Name": "Gemhide Sliver",
-    "TimesSeenCount": 2,
-    "TimesInLegalColorIdentity": 2,
-    "LastSeenDeckDateTime": "2026-04-04T09:03:51.1523058Z",
+    "TimesSeenCount": 6,
+    "TimesInLegalColorIdentity": 6,
+    "LastSeenDeckDateTime": "2026-04-04T20:25:42.7792313Z",
     "ArchetypeAppearances": {
-      "Combo": 2
+      "Combo": 6
     },
     "RoleTagAppearances": {
-      "Creature": 2,
-      "Tribe:Sliver": 2
+      "Creature": 6,
+      "Tribe:Sliver": 6
     }
   },
   {
     "Name": "Hakbal of the Surging Soul",
-    "TimesSeenCount": 2,
-    "TimesInLegalColorIdentity": 2,
-    "LastSeenDeckDateTime": "2026-04-04T09:03:51.152307Z",
+    "TimesSeenCount": 6,
+    "TimesInLegalColorIdentity": 6,
+    "LastSeenDeckDateTime": "2026-04-04T20:25:42.7792326Z",
     "ArchetypeAppearances": {
-      "Combo": 2
+      "Combo": 6
     },
     "RoleTagAppearances": {
-      "Card Draw": 2,
-      "Creature": 2,
-      "Tribe:Merfolk": 2,
-      "Tribe:Scout": 2
+      "Card Draw": 6,
+      "Creature": 6,
+      "Tribe:Merfolk": 6,
+      "Tribe:Scout": 6
     }
   },
   {
     "Name": "Harabaz Druid",
-    "TimesSeenCount": 2,
-    "TimesInLegalColorIdentity": 2,
-    "LastSeenDeckDateTime": "2026-04-04T09:03:51.1523079Z",
+    "TimesSeenCount": 6,
+    "TimesInLegalColorIdentity": 6,
+    "LastSeenDeckDateTime": "2026-04-04T20:25:42.7792336Z",
     "ArchetypeAppearances": {
-      "Combo": 2
+      "Combo": 6
     },
     "RoleTagAppearances": {
-      "Creature": 2,
-      "Tribe:Human": 2,
-      "Tribe:Druid": 2,
-      "Tribe:Ally": 2
+      "Creature": 6,
+      "Tribe:Human": 6,
+      "Tribe:Druid": 6,
+      "Tribe:Ally": 6
     }
   },
   {
     "Name": "Harmonic Sliver",
-    "TimesSeenCount": 2,
-    "TimesInLegalColorIdentity": 2,
-    "LastSeenDeckDateTime": "2026-04-04T09:03:51.1523089Z",
+    "TimesSeenCount": 6,
+    "TimesInLegalColorIdentity": 6,
+    "LastSeenDeckDateTime": "2026-04-04T20:25:42.7792345Z",
     "ArchetypeAppearances": {
-      "Combo": 2
+      "Combo": 6
     },
     "RoleTagAppearances": {
-      "Creature": 2,
-      "Removal": 2,
-      "Tribe:Sliver": 2
+      "Creature": 6,
+      "Removal": 6,
+      "Tribe:Sliver": 6
     }
   },
   {
     "Name": "Herald of Hoofbeats",
-    "TimesSeenCount": 2,
-    "TimesInLegalColorIdentity": 2,
-    "LastSeenDeckDateTime": "2026-04-04T09:03:51.1523096Z",
+    "TimesSeenCount": 6,
+    "TimesInLegalColorIdentity": 6,
+    "LastSeenDeckDateTime": "2026-04-04T20:25:42.7792354Z",
     "ArchetypeAppearances": {
-      "Combo": 2
+      "Combo": 6
     },
     "RoleTagAppearances": {
-      "Creature": 2,
-      "Tribe:Human": 2,
-      "Tribe:Knight": 2
+      "Creature": 6,
+      "Tribe:Human": 6,
+      "Tribe:Knight": 6
     }
   },
   {
     "Name": "Ingenious Infiltrator",
-    "TimesSeenCount": 2,
-    "TimesInLegalColorIdentity": 2,
-    "LastSeenDeckDateTime": "2026-04-04T09:03:51.1523105Z",
+    "TimesSeenCount": 6,
+    "TimesInLegalColorIdentity": 6,
+    "LastSeenDeckDateTime": "2026-04-04T20:25:42.7792366Z",
     "ArchetypeAppearances": {
-      "Combo": 2
+      "Combo": 6
     },
     "RoleTagAppearances": {
-      "Card Draw": 2,
-      "Creature": 2,
-      "Tribe:Vedalken": 2,
-      "Tribe:Ninja": 2
+      "Card Draw": 6,
+      "Creature": 6,
+      "Tribe:Vedalken": 6,
+      "Tribe:Ninja": 6
     }
   },
   {
     "Name": "Kaito, Bane of Nightmares",
-    "TimesSeenCount": 2,
-    "TimesInLegalColorIdentity": 2,
-    "LastSeenDeckDateTime": "2026-04-04T09:03:51.1523119Z",
+    "TimesSeenCount": 6,
+    "TimesInLegalColorIdentity": 6,
+    "LastSeenDeckDateTime": "2026-04-04T20:25:42.7792379Z",
     "ArchetypeAppearances": {
-      "Combo": 2
+      "Combo": 6
     },
     "RoleTagAppearances": {
-      "Card Draw": 2,
-      "Planeswalker": 2,
-      "Protection": 2
+      "Card Draw": 6,
+      "Planeswalker": 6,
+      "Protection": 6
     }
   },
   {
     "Name": "Knight Exemplar",
-    "TimesSeenCount": 2,
-    "TimesInLegalColorIdentity": 2,
-    "LastSeenDeckDateTime": "2026-04-04T09:03:51.1523128Z",
+    "TimesSeenCount": 6,
+    "TimesInLegalColorIdentity": 6,
+    "LastSeenDeckDateTime": "2026-04-04T20:25:42.7792389Z",
     "ArchetypeAppearances": {
-      "Combo": 2
+      "Combo": 6
     },
     "RoleTagAppearances": {
-      "Creature": 2,
-      "Protection": 2,
-      "Tribe:Human": 2,
-      "Tribe:Knight": 2
+      "Creature": 6,
+      "Protection": 6,
+      "Tribe:Human": 6,
+      "Tribe:Knight": 6
     }
   },
   {
     "Name": "Leyline of the Guildpact",
-    "TimesSeenCount": 2,
-    "TimesInLegalColorIdentity": 2,
-    "LastSeenDeckDateTime": "2026-04-04T09:03:51.1523135Z",
+    "TimesSeenCount": 6,
+    "TimesInLegalColorIdentity": 6,
+    "LastSeenDeckDateTime": "2026-04-04T20:25:42.7792396Z",
     "ArchetypeAppearances": {
-      "Combo": 2
+      "Combo": 6
     },
     "RoleTagAppearances": {
-      "Enchantment": 2
+      "Enchantment": 6
     }
   },
   {
     "Name": "Magda, Brazen Outlaw",
-    "TimesSeenCount": 2,
-    "TimesInLegalColorIdentity": 2,
-    "LastSeenDeckDateTime": "2026-04-04T09:03:51.1523153Z",
+    "TimesSeenCount": 6,
+    "TimesInLegalColorIdentity": 6,
+    "LastSeenDeckDateTime": "2026-04-04T20:25:42.7792428Z",
     "ArchetypeAppearances": {
-      "Combo": 2
+      "Combo": 6
     },
     "RoleTagAppearances": {
-      "Creature": 2,
-      "Ramp": 2,
-      "Token Generation": 2,
-      "Tutor": 2,
-      "Tribe:Dwarf": 2,
-      "Tribe:Berserker": 2
+      "Creature": 6,
+      "Ramp": 6,
+      "Token Generation": 6,
+      "Tutor": 6,
+      "Tribe:Dwarf": 6,
+      "Tribe:Berserker": 6
     }
   },
   {
     "Name": "Malcolm, Keen-Eyed Navigator",
-    "TimesSeenCount": 2,
-    "TimesInLegalColorIdentity": 2,
-    "LastSeenDeckDateTime": "2026-04-04T09:03:51.1523168Z",
+    "TimesSeenCount": 6,
+    "TimesInLegalColorIdentity": 6,
+    "LastSeenDeckDateTime": "2026-04-04T20:25:42.7792442Z",
     "ArchetypeAppearances": {
-      "Combo": 2
+      "Combo": 6
     },
     "RoleTagAppearances": {
-      "Creature": 2,
-      "Ramp": 2,
-      "Token Generation": 2,
-      "Tribe:Siren": 2,
-      "Tribe:Pirate": 2,
-      "Flying": 2
+      "Creature": 6,
+      "Ramp": 6,
+      "Token Generation": 6,
+      "Tribe:Siren": 6,
+      "Tribe:Pirate": 6,
+      "Flying": 6
     }
   },
   {
     "Name": "Manaweft Sliver",
-    "TimesSeenCount": 2,
-    "TimesInLegalColorIdentity": 2,
-    "LastSeenDeckDateTime": "2026-04-04T09:03:51.1523174Z",
+    "TimesSeenCount": 6,
+    "TimesInLegalColorIdentity": 6,
+    "LastSeenDeckDateTime": "2026-04-04T20:25:42.7792449Z",
     "ArchetypeAppearances": {
-      "Combo": 2
+      "Combo": 6
     },
     "RoleTagAppearances": {
-      "Creature": 2,
-      "Tribe:Sliver": 2
+      "Creature": 6,
+      "Tribe:Sliver": 6
     }
   },
   {
     "Name": "Masked Vandal",
-    "TimesSeenCount": 2,
-    "TimesInLegalColorIdentity": 2,
-    "LastSeenDeckDateTime": "2026-04-04T09:03:51.1523182Z",
+    "TimesSeenCount": 6,
+    "TimesInLegalColorIdentity": 6,
+    "LastSeenDeckDateTime": "2026-04-04T20:25:42.7792457Z",
     "ArchetypeAppearances": {
-      "Combo": 2
+      "Combo": 6
     },
     "RoleTagAppearances": {
-      "Creature": 2,
-      "Removal": 2,
-      "Tribe:Shapeshifter": 2
+      "Creature": 6,
+      "Removal": 6,
+      "Tribe:Shapeshifter": 6
     }
   },
   {
     "Name": "Mass Appeal",
-    "TimesSeenCount": 2,
-    "TimesInLegalColorIdentity": 2,
-    "LastSeenDeckDateTime": "2026-04-04T09:03:51.1523206Z",
+    "TimesSeenCount": 6,
+    "TimesInLegalColorIdentity": 6,
+    "LastSeenDeckDateTime": "2026-04-04T20:25:42.779248Z",
     "ArchetypeAppearances": {
-      "Combo": 2
+      "Combo": 6
     },
     "RoleTagAppearances": {
-      "Card Draw": 2,
-      "Sorcery": 2
+      "Card Draw": 6,
+      "Sorcery": 6
     }
   },
   {
     "Name": "Mirror Entity",
-    "TimesSeenCount": 2,
-    "TimesInLegalColorIdentity": 2,
-    "LastSeenDeckDateTime": "2026-04-04T09:03:51.1523212Z",
+    "TimesSeenCount": 6,
+    "TimesInLegalColorIdentity": 6,
+    "LastSeenDeckDateTime": "2026-04-04T20:25:42.7792487Z",
     "ArchetypeAppearances": {
-      "Combo": 2
+      "Combo": 6
     },
     "RoleTagAppearances": {
-      "Creature": 2,
-      "Tribe:Shapeshifter": 2
+      "Creature": 6,
+      "Tribe:Shapeshifter": 6
     }
   },
   {
     "Name": "Mischievous Sneakling",
-    "TimesSeenCount": 2,
-    "TimesInLegalColorIdentity": 2,
-    "LastSeenDeckDateTime": "2026-04-04T09:03:51.1523218Z",
+    "TimesSeenCount": 6,
+    "TimesInLegalColorIdentity": 6,
+    "LastSeenDeckDateTime": "2026-04-04T20:25:42.7792494Z",
     "ArchetypeAppearances": {
-      "Combo": 2
+      "Combo": 6
     },
     "RoleTagAppearances": {
-      "Creature": 2,
-      "Tribe:Shapeshifter": 2
+      "Creature": 6,
+      "Tribe:Shapeshifter": 6
     }
   },
   {
     "Name": "Morophon, the Boundless",
-    "TimesSeenCount": 2,
+    "TimesSeenCount": 6,
     "TimesInLegalColorIdentity": 0,
-    "LastSeenDeckDateTime": "2026-04-04T09:03:51.1523226Z",
+    "LastSeenDeckDateTime": "2026-04-04T20:25:42.77925Z",
     "ArchetypeAppearances": {
-      "Combo": 2
+      "Combo": 6
     },
     "RoleTagAppearances": {
-      "Creature": 2,
-      "Tribe:Shapeshifter": 2
+      "Creature": 6,
+      "Tribe:Shapeshifter": 6
     }
   },
   {
     "Name": "Mothdust Changeling",
-    "TimesSeenCount": 2,
-    "TimesInLegalColorIdentity": 2,
-    "LastSeenDeckDateTime": "2026-04-04T09:03:51.1523233Z",
+    "TimesSeenCount": 6,
+    "TimesInLegalColorIdentity": 6,
+    "LastSeenDeckDateTime": "2026-04-04T20:25:42.7792507Z",
     "ArchetypeAppearances": {
-      "Combo": 2
+      "Combo": 6
     },
     "RoleTagAppearances": {
-      "Creature": 2,
-      "Tribe:Shapeshifter": 2,
-      "Flying": 2
+      "Creature": 6,
+      "Tribe:Shapeshifter": 6,
+      "Flying": 6
     }
   },
   {
     "Name": "Necroduality",
-    "TimesSeenCount": 2,
-    "TimesInLegalColorIdentity": 2,
-    "LastSeenDeckDateTime": "2026-04-04T09:03:51.1523242Z",
+    "TimesSeenCount": 6,
+    "TimesInLegalColorIdentity": 6,
+    "LastSeenDeckDateTime": "2026-04-04T20:25:42.7792517Z",
     "ArchetypeAppearances": {
-      "Combo": 2
+      "Combo": 6
     },
     "RoleTagAppearances": {
-      "Enchantment": 2,
-      "Token Generation": 2
+      "Enchantment": 6,
+      "Token Generation": 6
     }
   },
   {
     "Name": "Oko, Lorwyn Liege",
-    "TimesSeenCount": 2,
-    "TimesInLegalColorIdentity": 2,
-    "LastSeenDeckDateTime": "2026-04-04T09:03:51.1523251Z",
+    "TimesSeenCount": 6,
+    "TimesInLegalColorIdentity": 6,
+    "LastSeenDeckDateTime": "2026-04-04T20:25:42.7792528Z",
     "ArchetypeAppearances": {
-      "Combo": 2
+      "Combo": 6
     },
     "RoleTagAppearances": {
-      "Planeswalker": 2,
-      "Protection": 2,
-      "Token Generation": 2,
-      "Mill": 2
+      "Planeswalker": 6,
+      "Protection": 6,
+      "Token Generation": 6,
+      "Mill": 6
     }
   },
   {
     "Name": "Patchwork Banner",
-    "TimesSeenCount": 2,
+    "TimesSeenCount": 6,
     "TimesInLegalColorIdentity": 0,
-    "LastSeenDeckDateTime": "2026-04-04T09:03:51.1523256Z",
+    "LastSeenDeckDateTime": "2026-04-04T20:25:42.7792533Z",
     "ArchetypeAppearances": {
-      "Combo": 2
+      "Combo": 6
     },
     "RoleTagAppearances": {
-      "Artifact": 2
+      "Artifact": 6
     }
   },
   {
     "Name": "Peer Pressure",
-    "TimesSeenCount": 2,
-    "TimesInLegalColorIdentity": 2,
-    "LastSeenDeckDateTime": "2026-04-04T09:03:51.1523265Z",
+    "TimesSeenCount": 6,
+    "TimesInLegalColorIdentity": 6,
+    "LastSeenDeckDateTime": "2026-04-04T20:25:42.7792546Z",
     "ArchetypeAppearances": {
-      "Combo": 2
+      "Combo": 6
     },
     "RoleTagAppearances": {
-      "Sorcery": 2
+      "Sorcery": 6
     }
   },
   {
     "Name": "Priest of Titania",
-    "TimesSeenCount": 2,
-    "TimesInLegalColorIdentity": 2,
-    "LastSeenDeckDateTime": "2026-04-04T09:03:51.1523276Z",
+    "TimesSeenCount": 6,
+    "TimesInLegalColorIdentity": 6,
+    "LastSeenDeckDateTime": "2026-04-04T20:25:42.779256Z",
     "ArchetypeAppearances": {
-      "Combo": 2
+      "Combo": 6
     },
     "RoleTagAppearances": {
-      "Creature": 2,
-      "Ramp": 2,
-      "Tribe:Elf": 2,
-      "Tribe:Druid": 2
+      "Creature": 6,
+      "Ramp": 6,
+      "Tribe:Elf": 6,
+      "Tribe:Druid": 6
     }
   },
   {
     "Name": "Rampant Growth",
-    "TimesSeenCount": 2,
-    "TimesInLegalColorIdentity": 2,
-    "LastSeenDeckDateTime": "2026-04-04T09:03:51.1523282Z",
+    "TimesSeenCount": 6,
+    "TimesInLegalColorIdentity": 6,
+    "LastSeenDeckDateTime": "2026-04-04T20:25:42.7792566Z",
     "ArchetypeAppearances": {
-      "Combo": 2
+      "Combo": 6
     },
     "RoleTagAppearances": {
-      "Sorcery": 2,
-      "Tutor": 2
+      "Sorcery": 6,
+      "Tutor": 6
     }
   },
   {
     "Name": "Realmwalker",
-    "TimesSeenCount": 2,
-    "TimesInLegalColorIdentity": 2,
-    "LastSeenDeckDateTime": "2026-04-04T09:03:51.1523288Z",
+    "TimesSeenCount": 6,
+    "TimesInLegalColorIdentity": 6,
+    "LastSeenDeckDateTime": "2026-04-04T20:25:42.7792573Z",
     "ArchetypeAppearances": {
-      "Combo": 2
+      "Combo": 6
     },
     "RoleTagAppearances": {
-      "Creature": 2,
-      "Tribe:Shapeshifter": 2
+      "Creature": 6,
+      "Tribe:Shapeshifter": 6
     }
   },
   {
     "Name": "Risen Reef",
-    "TimesSeenCount": 2,
-    "TimesInLegalColorIdentity": 2,
-    "LastSeenDeckDateTime": "2026-04-04T09:03:51.1523295Z",
+    "TimesSeenCount": 6,
+    "TimesInLegalColorIdentity": 6,
+    "LastSeenDeckDateTime": "2026-04-04T20:25:42.779258Z",
     "ArchetypeAppearances": {
-      "Combo": 2
+      "Combo": 6
     },
     "RoleTagAppearances": {
-      "Creature": 2,
-      "Tribe:Elemental": 2
+      "Creature": 6,
+      "Tribe:Elemental": 6
     }
   },
   {
     "Name": "Rooftop Storm",
-    "TimesSeenCount": 2,
-    "TimesInLegalColorIdentity": 2,
-    "LastSeenDeckDateTime": "2026-04-04T09:03:51.1523301Z",
+    "TimesSeenCount": 6,
+    "TimesInLegalColorIdentity": 6,
+    "LastSeenDeckDateTime": "2026-04-04T20:25:42.7792585Z",
     "ArchetypeAppearances": {
-      "Combo": 2
+      "Combo": 6
     },
     "RoleTagAppearances": {
-      "Enchantment": 2
+      "Enchantment": 6
     }
   },
   {
     "Name": "Shapesharer",
-    "TimesSeenCount": 2,
-    "TimesInLegalColorIdentity": 2,
-    "LastSeenDeckDateTime": "2026-04-04T09:03:51.1523307Z",
+    "TimesSeenCount": 6,
+    "TimesInLegalColorIdentity": 6,
+    "LastSeenDeckDateTime": "2026-04-04T20:25:42.7792593Z",
     "ArchetypeAppearances": {
-      "Combo": 2
+      "Combo": 6
     },
     "RoleTagAppearances": {
-      "Creature": 2,
-      "Tribe:Shapeshifter": 2
+      "Creature": 6,
+      "Tribe:Shapeshifter": 6
     }
   },
   {
     "Name": "Shields of Velis Vel",
-    "TimesSeenCount": 2,
-    "TimesInLegalColorIdentity": 2,
-    "LastSeenDeckDateTime": "2026-04-04T09:03:51.1523314Z",
+    "TimesSeenCount": 6,
+    "TimesInLegalColorIdentity": 6,
+    "LastSeenDeckDateTime": "2026-04-04T20:25:42.77926Z",
     "ArchetypeAppearances": {
-      "Combo": 2
+      "Combo": 6
     },
     "RoleTagAppearances": {
-      "Instant": 2
+      "Instant": 6
     }
   },
   {
     "Name": "Skeletal Changeling",
-    "TimesSeenCount": 2,
-    "TimesInLegalColorIdentity": 2,
-    "LastSeenDeckDateTime": "2026-04-04T09:03:51.1523319Z",
+    "TimesSeenCount": 6,
+    "TimesInLegalColorIdentity": 6,
+    "LastSeenDeckDateTime": "2026-04-04T20:25:42.7792606Z",
     "ArchetypeAppearances": {
-      "Combo": 2
+      "Combo": 6
     },
     "RoleTagAppearances": {
-      "Creature": 2,
-      "Tribe:Shapeshifter": 2
+      "Creature": 6,
+      "Tribe:Shapeshifter": 6
     }
   },
   {
     "Name": "Spoils of Adventure",
-    "TimesSeenCount": 2,
-    "TimesInLegalColorIdentity": 2,
-    "LastSeenDeckDateTime": "2026-04-04T09:03:51.1523343Z",
+    "TimesSeenCount": 6,
+    "TimesInLegalColorIdentity": 6,
+    "LastSeenDeckDateTime": "2026-04-04T20:25:42.7792633Z",
     "ArchetypeAppearances": {
-      "Combo": 2
+      "Combo": 6
     },
     "RoleTagAppearances": {
-      "Card Draw": 2,
-      "Instant": 2,
-      "Life Gain": 2
+      "Card Draw": 6,
+      "Instant": 6,
+      "Life Gain": 6
     }
   },
   {
     "Name": "Sylvia Brightspear",
-    "TimesSeenCount": 2,
-    "TimesInLegalColorIdentity": 2,
-    "LastSeenDeckDateTime": "2026-04-04T09:03:51.1523351Z",
+    "TimesSeenCount": 6,
+    "TimesInLegalColorIdentity": 6,
+    "LastSeenDeckDateTime": "2026-04-04T20:25:42.7792642Z",
     "ArchetypeAppearances": {
-      "Combo": 2
+      "Combo": 6
     },
     "RoleTagAppearances": {
-      "Creature": 2,
-      "Tribe:Human": 2,
-      "Tribe:Knight": 2
+      "Creature": 6,
+      "Tribe:Human": 6,
+      "Tribe:Knight": 6
     }
   },
   {
     "Name": "Taurean Mauler",
-    "TimesSeenCount": 2,
-    "TimesInLegalColorIdentity": 2,
-    "LastSeenDeckDateTime": "2026-04-04T09:03:51.1523357Z",
+    "TimesSeenCount": 6,
+    "TimesInLegalColorIdentity": 6,
+    "LastSeenDeckDateTime": "2026-04-04T20:25:42.7792647Z",
     "ArchetypeAppearances": {
-      "Combo": 2
+      "Combo": 6
     },
     "RoleTagAppearances": {
-      "Creature": 2,
-      "Tribe:Shapeshifter": 2
+      "Creature": 6,
+      "Tribe:Shapeshifter": 6
     }
   },
   {
     "Name": "Thrumming Hivepool",
-    "TimesSeenCount": 2,
+    "TimesSeenCount": 6,
     "TimesInLegalColorIdentity": 0,
-    "LastSeenDeckDateTime": "2026-04-04T09:03:51.1523363Z",
+    "LastSeenDeckDateTime": "2026-04-04T20:25:42.7792654Z",
     "ArchetypeAppearances": {
-      "Combo": 2
+      "Combo": 6
     },
     "RoleTagAppearances": {
-      "Artifact": 2,
-      "Token Generation": 2
+      "Artifact": 6,
+      "Token Generation": 6
     }
   },
   {
     "Name": "Universal Automaton",
-    "TimesSeenCount": 2,
+    "TimesSeenCount": 6,
     "TimesInLegalColorIdentity": 0,
-    "LastSeenDeckDateTime": "2026-04-04T09:03:51.1523369Z",
+    "LastSeenDeckDateTime": "2026-04-04T20:25:42.7792661Z",
     "ArchetypeAppearances": {
-      "Combo": 2
+      "Combo": 6
     },
     "RoleTagAppearances": {
-      "Artifact": 2,
-      "Creature": 2,
-      "Tribe:Shapeshifter": 2
+      "Artifact": 6,
+      "Creature": 6,
+      "Tribe:Shapeshifter": 6
     }
   },
   {
     "Name": "Unsettled Mariner",
-    "TimesSeenCount": 2,
-    "TimesInLegalColorIdentity": 2,
-    "LastSeenDeckDateTime": "2026-04-04T09:03:51.1523375Z",
+    "TimesSeenCount": 6,
+    "TimesInLegalColorIdentity": 6,
+    "LastSeenDeckDateTime": "2026-04-04T20:25:42.7792667Z",
     "ArchetypeAppearances": {
-      "Combo": 2
+      "Combo": 6
     },
     "RoleTagAppearances": {
-      "Creature": 2,
-      "Tribe:Shapeshifter": 2
+      "Creature": 6,
+      "Tribe:Shapeshifter": 6
     }
   },
   {
     "Name": "Voja, Jaws of the Conclave",
-    "TimesSeenCount": 2,
-    "TimesInLegalColorIdentity": 2,
-    "LastSeenDeckDateTime": "2026-04-04T09:03:51.1523392Z",
+    "TimesSeenCount": 6,
+    "TimesInLegalColorIdentity": 6,
+    "LastSeenDeckDateTime": "2026-04-04T20:25:42.7792682Z",
     "ArchetypeAppearances": {
-      "Combo": 2
+      "Combo": 6
     },
     "RoleTagAppearances": {
-      "Card Draw": 2,
-      "Creature": 2,
-      "Protection": 2,
-      "Tribe:Wolf": 2,
-      "Trample": 2,
-      "Vigilance": 2,
-      "Ward": 2
+      "Card Draw": 6,
+      "Creature": 6,
+      "Protection": 6,
+      "Tribe:Wolf": 6,
+      "Trample": 6,
+      "Vigilance": 6,
+      "Ward": 6
     }
   },
   {
     "Name": "Whelming Wave",
-    "TimesSeenCount": 2,
-    "TimesInLegalColorIdentity": 2,
-    "LastSeenDeckDateTime": "2026-04-04T09:03:51.1523403Z",
+    "TimesSeenCount": 6,
+    "TimesInLegalColorIdentity": 6,
+    "LastSeenDeckDateTime": "2026-04-04T20:25:42.7792695Z",
     "ArchetypeAppearances": {
-      "Combo": 2
+      "Combo": 6
     },
     "RoleTagAppearances": {
-      "Board Wipe": 2,
-      "Sorcery": 2
+      "Board Wipe": 6,
+      "Sorcery": 6
     }
   },
   {
     "Name": "Yuriko, the Tiger\u0027s Shadow",
-    "TimesSeenCount": 2,
-    "TimesInLegalColorIdentity": 2,
-    "LastSeenDeckDateTime": "2026-04-04T09:03:51.1523412Z",
+    "TimesSeenCount": 6,
+    "TimesInLegalColorIdentity": 6,
+    "LastSeenDeckDateTime": "2026-04-04T20:25:42.7792702Z",
     "ArchetypeAppearances": {
-      "Combo": 2
+      "Combo": 6
     },
     "RoleTagAppearances": {
-      "Creature": 2,
-      "Tribe:Human": 2,
-      "Tribe:Ninja": 2
+      "Creature": 6,
+      "Tribe:Human": 6,
+      "Tribe:Ninja": 6
     }
   }
 ]

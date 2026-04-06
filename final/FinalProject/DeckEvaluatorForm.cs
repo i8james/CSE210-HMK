@@ -678,20 +678,27 @@ public class DeckEvaluatorForm : Form
     {
         void UpdateRegion()
         {
-            if (control.Width <= 0 || control.Height <= 0)
-                return;
+            try
+            {
+                if (control.IsDisposed || control.Width <= 0 || control.Height <= 0)
+                    return;
 
-            using var path = new GraphicsPath();
-            int diameter = Math.Max(2, radius * 2);
-            var rect = new Rectangle(0, 0, control.Width - 1, control.Height - 1);
+                using var path = new GraphicsPath();
+                int diameter = Math.Max(2, radius * 2);
+                var rect = new Rectangle(0, 0, control.Width - 1, control.Height - 1);
 
-            path.AddArc(rect.Left, rect.Top, diameter, diameter, 180, 90);
-            path.AddArc(rect.Right - diameter, rect.Top, diameter, diameter, 270, 90);
-            path.AddArc(rect.Right - diameter, rect.Bottom - diameter, diameter, diameter, 0, 90);
-            path.AddArc(rect.Left, rect.Bottom - diameter, diameter, diameter, 90, 90);
-            path.CloseFigure();
+                path.AddArc(rect.Left, rect.Top, diameter, diameter, 180, 90);
+                path.AddArc(rect.Right - diameter, rect.Top, diameter, diameter, 270, 90);
+                path.AddArc(rect.Right - diameter, rect.Bottom - diameter, diameter, diameter, 0, 90);
+                path.AddArc(rect.Left, rect.Bottom - diameter, diameter, diameter, 90, 90);
+                path.CloseFigure();
 
-            control.Region = new Region(path);
+                control.Region = new Region(path);
+            }
+            catch
+            {
+                // Keep default region if GDI operations fail unexpectedly.
+            }
         }
 
         control.SizeChanged += (_, _) => UpdateRegion();
@@ -896,31 +903,41 @@ public class DeckEvaluatorForm : Form
 
     private void ResultsTextBox_MouseMove(object? sender, MouseEventArgs e)
     {
-        int charIndex = resultsTextBox.GetCharIndexFromPosition(e.Location);
-        if (charIndex < 0 || charIndex >= resultsTextBox.TextLength)
-            return;
-
-        int lineIndex = resultsTextBox.GetLineFromCharIndex(charIndex);
-        if (lineIndex < 0 || lineIndex >= resultsTextBox.Lines.Length)
-            return;
-
-        string line = resultsTextBox.Lines[lineIndex].Trim();
-        if (!TryExtractCardNameFromLine(line, out string cardName))
+        try
         {
-            if (_lastHoveredCard.Length > 0)
+            if (resultsTextBox.IsDisposed || !resultsTextBox.Visible || resultsTextBox.TextLength == 0)
+                return;
+
+            int charIndex = resultsTextBox.GetCharIndexFromPosition(e.Location);
+            if (charIndex < 0 || charIndex >= resultsTextBox.TextLength)
+                return;
+
+            int lineIndex = resultsTextBox.GetLineFromCharIndex(charIndex);
+            if (lineIndex < 0 || lineIndex >= resultsTextBox.Lines.Length)
+                return;
+
+            string line = resultsTextBox.Lines[lineIndex].Trim();
+            if (!TryExtractCardNameFromLine(line, out string cardName))
             {
-                cardPreviewToolTip.Hide(resultsTextBox);
-                _lastHoveredCard = string.Empty;
+                if (_lastHoveredCard.Length > 0)
+                {
+                    cardPreviewToolTip.Hide(resultsTextBox);
+                    _lastHoveredCard = string.Empty;
+                }
+                return;
             }
-            return;
+
+            if (cardName.Equals(_lastHoveredCard, StringComparison.OrdinalIgnoreCase))
+                return;
+
+            _lastHoveredCard = cardName;
+            string preview = BuildCardPreview(cardName);
+            cardPreviewToolTip.Show(preview, resultsTextBox, e.Location.X + 18, e.Location.Y + 18, 3500);
         }
-
-        if (cardName.Equals(_lastHoveredCard, StringComparison.OrdinalIgnoreCase))
-            return;
-
-        _lastHoveredCard = cardName;
-        string preview = BuildCardPreview(cardName);
-        cardPreviewToolTip.Show(preview, resultsTextBox, e.Location.X + 18, e.Location.Y + 18, 3500);
+        catch
+        {
+            // Avoid UI crash from tooltip/hover parsing edge cases.
+        }
     }
 
     private bool TryExtractCardNameFromLine(string line, out string cardName)

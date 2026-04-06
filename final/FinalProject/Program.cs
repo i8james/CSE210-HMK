@@ -16,9 +16,54 @@ internal static class Program
             return;
         }
 
+        Application.SetUnhandledExceptionMode(UnhandledExceptionMode.CatchException);
+        Application.ThreadException += (_, eventArgs) =>
+        {
+            HandleUnhandledException(eventArgs.Exception, "UI Thread");
+        };
+        AppDomain.CurrentDomain.UnhandledException += (_, eventArgs) =>
+        {
+            if (eventArgs.ExceptionObject is Exception ex)
+                HandleUnhandledException(ex, "AppDomain");
+            else
+                AppendCrashLog($"[{DateTime.Now:yyyy-MM-dd HH:mm:ss}] [AppDomain] Non-exception crash object encountered.");
+        };
+
         Application.EnableVisualStyles();
         Application.SetCompatibleTextRenderingDefault(false);
         Application.Run(new DeckEvaluatorForm());
+    }
+
+    private static void HandleUnhandledException(Exception ex, string source)
+    {
+        AppendCrashLog($"[{DateTime.Now:yyyy-MM-dd HH:mm:ss}] [{source}] {ex}");
+
+        try
+        {
+            MessageBox.Show(
+                "Fizban hit an unexpected error and recovered.\n\n" +
+                "Details were written to crash.log in the app folder.",
+                "Fizban Error",
+                MessageBoxButtons.OK,
+                MessageBoxIcon.Error);
+        }
+        catch
+        {
+            // If message box fails, we still keep the crash log.
+        }
+    }
+
+    private static void AppendCrashLog(string line)
+    {
+        try
+        {
+            string crashPath = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "crash.log");
+            File.AppendAllText(crashPath, line + Environment.NewLine + Environment.NewLine);
+        }
+        catch
+        {
+            // Avoid recursive crash paths if logging fails.
+        }
     }
 
     private static void RunHeadlessTraining(string[] args)
